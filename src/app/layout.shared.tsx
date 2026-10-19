@@ -11,9 +11,19 @@ export const baseOptions: BaseLayoutProps = {
   nav: {
     title: (
       <span className='inline-flex items-center gap-2.5'>
+        {/* Dark-ink mark on light theme, original white mark on dark theme. */}
         <Image
           alt='Carbonized'
-          className='size-8 rounded object-contain'
+          className='size-8 rounded object-contain dark:hidden'
+          height={1254}
+          priority
+          src='/brand/carbonized-logo-on-light.png'
+          width={1254}
+        />
+        <Image
+          alt=''
+          aria-hidden='true'
+          className='hidden size-8 rounded object-contain dark:block'
           height={1254}
           priority
           src='/brand/carbonized-logo-source.png'
