@@ -1,0 +1,40 @@
+name: Bug report
+description: Something in the web app or contracts does not behave as documented
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not post private keys, seed phrases, KYC data or a suspected vulnerability here. Vulnerabilities go through [SECURITY.md](https://github.com/CarbonizedLab/carbonized/blob/main/SECURITY.md).
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options: [Web app, Contracts, Docs, Deployment scripts, Other]
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: "1. Go to ...\n2. Click ...\n3. See ..."
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: Environment
+      description: Network, browser and commit hash.
+      placeholder: Robinhood Chain 4663, Chrome 130, abc1234

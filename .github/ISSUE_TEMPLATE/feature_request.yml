@@ -1,0 +1,23 @@
+name: Feature request
+description: Propose an improvement
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem this solves
+    validations:
+      required: true
+  - type: textarea
+    id: change
+    attributes:
+      label: Proposed change
+    validations:
+      required: true
+  - type: textarea
+    id: compliance
+    attributes:
+      label: Jurisdiction or compliance impact, if any
+  - type: markdown
+    attributes:
+      value: Do not post private keys, seed phrases, KYC data or a suspected vulnerability here. Vulnerabilities go through [SECURITY.md](https://github.com/CarbonizedLab/carbonized/blob/main/SECURITY.md).
