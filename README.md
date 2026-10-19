@@ -26,15 +26,9 @@ An open-source **onchain marketplace for carbon credits**. A credit is issued by
 
 ## How a credit moves
 
-```mermaid
-flowchart LR
-    I[Approved issuer] -->|mint| N[Credit NFT<br/>one per serial]
-    N -->|wrap, eligible credits| P[Pooled token<br/>1 token = 1 tonne]
-    N -->|list| M[Marketplace<br/>order book · auctions]
-    P -->|list| M
-    M -->|buy / sell| H[Holder]
-    H -->|retire| R[Retirement certificate<br/>public record]
-```
+<p align="center">
+  <img src="./public/how-a-credit-moves.png" alt="How a credit moves: issue, pool, trade and retire, with the onchain record created at each step" width="100%">
+</p>
 
 | Step | What happens | Contract |
 | --- | --- | --- |
