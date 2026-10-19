@@ -1,0 +1,90 @@
+---
+title: Reown AppKit
+description: Connect to Carbonized with Reown AppKit (WalletConnect) or an injected wallet such as MetaMask.
+---
+
+Carbonized connects wallets through [Reown AppKit](https://docs.reown.com/appkit/overview) (formerly WalletConnect Web3Modal) with the wagmi adapter (`@reown/appkit`, `@reown/appkit-adapter-wagmi`). Injected browser wallets such as MetaMask also work.
+
+## Setup
+
+<Steps>
+<Step>
+
+### Create a Reown project
+
+Sign in at `https://dashboard.reown.com`, create a project of type **AppKit / Web**, and copy the **Project ID**.
+
+</Step>
+<Step>
+
+### Allow your origin
+
+In the project's settings add the domains you serve the app from (for example `http://localhost:3000` and your production URL). WalletConnect rejects unknown origins.
+
+</Step>
+<Step>
+
+### Set the environment variable
+
+```bash
+NEXT_PUBLIC_REOWN_PROJECT_ID=<your project id>
+NEXT_PUBLIC_APP_URL=http://localhost:3000   # used in AppKit metadata
+```
+
+Restart the dev server after editing `.env.local`.
+
+</Step>
+</Steps>
+
+## How the app behaves
+
+How the **Connect Wallet** button behaves:
+
+| `NEXT_PUBLIC_REOWN_PROJECT_ID` | Connect Wallet button | wagmi config |
+| --- | --- | --- |
+| set | Opens the AppKit modal (WalletConnect QR, mobile wallets, detected browser wallets) | `WagmiAdapter` config limited to the target chain |
+| unset | Connects directly with the first wagmi connector, `injected()` (MetaMask and similar) | Plain wagmi config with `injected()` |
+
+In both modes:
+
+- The target chain comes from `NEXT_PUBLIC_NETWORK` (see [Networks](/docs/wallet/networks)). AppKit is configured with only that chain, and it is also the default network.
+- AppKit metadata: name `Carbonized`, description `Decentralized carbon credit marketplace`, icon `<NEXT_PUBLIC_APP_URL>/icon.png`. Analytics are disabled (`features.analytics: false`).
+- When connected on the wrong chain, the button becomes **Switch to &lt;chain name&gt;**.
+- When connected on the right chain, the button shows the shortened address; clicking it disconnects.
+
+<Callout type="info">
+  Without a Reown project id, only injected wallets can connect. That is enough for local Hardhat development.
+</Callout>
+
+## Connect step by step
+
+<Steps>
+<Step>
+
+Open `/app` and click **Connect Wallet**.
+
+</Step>
+<Step>
+
+Pick a wallet in the modal (or approve the MetaMask prompt in injected mode).
+
+</Step>
+<Step>
+
+If the header shows **Switch to Robinhood Chain Testnet**, click it and approve the network switch in your wallet. If your wallet does not know the chain, add it with the values in [Networks](/docs/wallet/networks).
+
+</Step>
+<Step>
+
+Fund the account with testnet ETH from `https://faucet.testnet.chain.robinhood.com`.
+
+</Step>
+</Steps>
+
+## Troubleshooting
+
+- **Modal does not open / `Connect Wallet` connects MetaMask only:** `NEXT_PUBLIC_REOWN_PROJECT_ID` is empty or the server was not restarted.
+- **WalletConnect errors about origin:** add the current origin to the project's allowed domains in the Reown dashboard.
+- **Wrong network:** check `NEXT_PUBLIC_NETWORK` and `NEXT_PUBLIC_CHAIN_ID` match the chain you deployed to.
+
+More in [Troubleshooting](/docs/troubleshooting).

@@ -1,0 +1,108 @@
+---
+title: Robinhood Chain Testnet
+description: Compile and deploy the Carbonized contracts to Robinhood Chain Testnet and point the web app at them.
+---
+
+## Network facts
+
+| Item | Value |
+| --- | --- |
+| Chain id | `46630` |
+| Currency | ETH (18 decimals) |
+| RPC (official) | `https://rpc.testnet.chain.robinhood.com/rpc` (sometimes times out) |
+| RPC (fallback) | `https://robinhood-sepolia-rpc.publicnode.com` |
+| Explorer | `https://explorer.testnet.chain.robinhood.com` |
+| Faucet | `https://faucet.testnet.chain.robinhood.com` |
+
+## Prerequisites
+
+- Node.js 18+ and a package manager.
+- A fresh deployer wallet funded with testnet ETH from the faucet. Use a throwaway key; never reuse a mainnet key.
+
+<Callout type="error" title="Never commit private keys">
+  The deployer key belongs only in a git-ignored `.env` file used by Hardhat. Never paste it into docs, issues, chat or the web app's `.env.local`.
+</Callout>
+
+## Compiler settings
+
+| Setting | Value |
+| --- | --- |
+| Solidity | `0.8.20` |
+| Optimizer | enabled, `runs: 1` |
+| `evmVersion` | `paris` |
+| `viaIR` | `true` |
+
+<Callout type="warn" title="CarbonCreditNFT exceeds 24 KiB">
+  With these settings `CarbonCreditNFT` is about 25.5 KiB, above the EIP-170 limit of 24 KiB. The deployment relies on Robinhood Chain accepting larger contract code. Other EVM chains with the standard limit would reject this contract.
+</Callout>
+
+## Deploy
+
+<Steps>
+<Step>
+
+### Configure Hardhat
+
+Add the Robinhood Chain Testnet network (chain id `46630`, RPC `https://rpc.testnet.chain.robinhood.com/rpc`) to your Hardhat configuration and provide the deployer key through an environment variable. If the official RPC times out, use the fallback RPC from the table above.
+
+</Step>
+<Step>
+
+### Compile and deploy the contracts
+
+Compile with Hardhat, then deploy the contracts to the `robinhood` network in the order described in the [Contracts overview](/docs/contracts/overview#deployment-order). Deploy `CarbonRegistry(admin)` standalone: it does not reference the NFT and needs no `ISSUER_ROLE`, so do not grant it one.
+
+</Step>
+<Step>
+
+### Set the web app variables
+
+Set the `NEXT_PUBLIC_*` contract address variables, `NEXT_PUBLIC_NETWORK=robinhood`, `NEXT_PUBLIC_CHAIN_ID=46630` and `NEXT_PUBLIC_RPC_URL` in `.env.local` (see [Environment variables](/docs/deployment/environment-variables)), then restart the app.
+
+</Step>
+</Steps>
+
+## What the deployment does
+
+1. Deploys `CarbonCreditNFT`.
+2. Deploys three `CarbonCreditToken` instances: `CCT-ICM` (`ICM_COMPLIANCE`), `CCT-VCS` (`VERRA_VCS`), `CCT-GS` (`GOLD_STANDARD`).
+3. Deploys `MockERC20` as payment token (`"USD Coin"`, `"payment token"`, mock with a public `mint`) and mints test balances to the first signers. The current script passes **18 decimals**; the new marketplace reads `decimals()` of the payment token at construction (2 to 18 accepted) and the app reads the same value, so you can pass `6` instead to rehearse mainnet's real-payment token decimals.
+4. Deploys `CarbonMarketplace(usdc, CCT-VCS, nft)`. The marketplace trades the **Verra** token only.
+5. Deploys `MockFunctionsRouter` (mock), then `EmissionVerifier(router, nft)`, `RegistrySync(router, nft)` and `CarbonPriceOracle(router)`. Because the router is a mock, these three contracts are not served by a real Chainlink DON on testnet, and the script does not call `setFunctionsConfig` or upload a source with `setSource` (the oracle contracts no longer embed JavaScript; see [CarbonPriceOracle](/docs/contracts/carbon-price-oracle)).
+6. Grants roles:
+   - `NATIVE_ISSUER_ROLE` on the NFT to `EmissionVerifier` and to the deployer.
+   - `WRAPPER_ROLE` on each CCT to the deployer.
+   - `KYC_ROLE` on the marketplace to the deployer.
+7. `CarbonRegistry(admin)` is deployed separately by its own script. There is no faucet: neither the registry nor the NFT mints starter or free credits, so a testnet wallet only holds credits that a `NATIVE_ISSUER_ROLE` account has issued to it.
+
+## Public testnet deployment
+
+These are the public onchain addresses recorded in the repository's `deployments/robinhood.json`. That deployment **predates the audit fixes**: its marketplace and registry have the old ABIs (18-decimal price convention, raw email/phone and a starter-credit faucet in the registry). The current web app expects the redeployed contracts, so redeploy a fresh set and use your own addresses; treat the table below as a historical record.
+
+| Contract | Address |
+| --- | --- |
+| `CarbonCreditNFT` | [`0x9CB118EDd96Ac144F46CE02CBbDFaa02eD07A16C`](https://explorer.testnet.chain.robinhood.com/address/0x9CB118EDd96Ac144F46CE02CBbDFaa02eD07A16C) |
+| `CarbonCreditToken` (ICM_COMPLIANCE) | [`0xeC3A2aB8Fec123729dA666E4599e3CB2b9922A33`](https://explorer.testnet.chain.robinhood.com/address/0xeC3A2aB8Fec123729dA666E4599e3CB2b9922A33) |
+| `CarbonCreditToken` (VERRA_VCS) | [`0x6990e889c5692F72c90eF9f9d1fbE006ead5Db94`](https://explorer.testnet.chain.robinhood.com/address/0x6990e889c5692F72c90eF9f9d1fbE006ead5Db94) |
+| `CarbonCreditToken` (GOLD_STANDARD) | [`0x3C9C34008A4C84481944066cd986Da7bB00e3B1E`](https://explorer.testnet.chain.robinhood.com/address/0x3C9C34008A4C84481944066cd986Da7bB00e3B1E) |
+| Mock payment token (`MockERC20`) | [`0x1Bb31B24Cd3f9EAE493d1E55C4B0cDA929644FA8`](https://explorer.testnet.chain.robinhood.com/address/0x1Bb31B24Cd3f9EAE493d1E55C4B0cDA929644FA8) |
+| `CarbonMarketplace` | [`0x81c44f6A2078Fd7d903bbAd163BDff3ecE25913F`](https://explorer.testnet.chain.robinhood.com/address/0x81c44f6A2078Fd7d903bbAd163BDff3ecE25913F) |
+| `EmissionVerifier` | [`0xE48B4a350B14d0b83286686AB25e3bc029e9391e`](https://explorer.testnet.chain.robinhood.com/address/0xE48B4a350B14d0b83286686AB25e3bc029e9391e) |
+| `RegistrySync` | [`0x22Aa5A80f7B97c043F61c4d93274d20c656aB95F`](https://explorer.testnet.chain.robinhood.com/address/0x22Aa5A80f7B97c043F61c4d93274d20c656aB95F) |
+| `CarbonPriceOracle` | [`0x20E259010679FCFD625496E5203DDaEEAF787c89`](https://explorer.testnet.chain.robinhood.com/address/0x20E259010679FCFD625496E5203DDaEEAF787c89) |
+| `CarbonRegistry` | [`0x5d097dd1396fA03baA551C1DF26C28d49efE517D`](https://explorer.testnet.chain.robinhood.com/address/0x5d097dd1396fA03baA551C1DF26C28d49efE517D) |
+
+ERC-721 `Carbonized Credit` (`CBZ`); CCT tokens `Carbonized Credit - ICM / Verra / Gold Standard`. Deploy block: `135413281`.
+
+The marketplace was previously redeployed alone (block `135455841`) to add the minimum-price check. The audit-fix marketplace (payment-token-decimal prices, pull payments, fee manager, `claim()`) and the new registry require another redeployment. Orders and auctions on earlier marketplace deployments are not visible in the app.
+
+## Roles after deploy
+
+The deployer holds `DEFAULT_ADMIN_ROLE` and the other admin roles on every contract it deployed. Review [Roles and security](/docs/contracts/roles-and-security) before treating any deployment as shared infrastructure.
+
+## Troubleshooting
+
+- **RPC timeouts or `ETIMEDOUT`:** switch to the PublicNode fallback RPC and retry.
+- **Insufficient funds:** top up from the faucet; the deployment sends many transactions.
+- **Partial deploy:** a failed deployment leaves the already-deployed contracts behind. Redeploy a fresh set and update the `NEXT_PUBLIC_*` addresses.
+- **Frontend still shows old addresses:** restart `pnpm dev`; `NEXT_PUBLIC_*` values are inlined at build/start.

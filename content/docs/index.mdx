@@ -1,0 +1,54 @@
+---
+title: Introduction
+description: Carbonized is a carbon-credit marketplace on EVM chains, deployed to Robinhood Chain Testnet and being prepared for Robinhood Chain mainnet.
+---
+
+Carbonized lets companies and traders trade, auction and retire tokenized carbon credits onchain. Each credit is an ERC-721 NFT created by an authorized issuer and carrying project metadata; credits can be wrapped 1:1 by tonnes of CO2 into ERC-20 tokens that trade on a marketplace combining an order book, timed auctions and an AMM pool (the AMM is not wired into the web app yet).
+
+<Callout type="warn" title="Unaudited software">
+  The contracts have not been audited by an independent firm. The public deployment runs on **Robinhood Chain Testnet** (chain id `46630`) with a mock payment token and a mock Chainlink Functions router. Robinhood Chain mainnet (chain id `4663`, real 6-decimal payment token) is being prepared: see [Robinhood Chain Mainnet](/docs/deployment/robinhood-mainnet). The app shows a "Testnet / unaudited" banner on every build that is not configured for mainnet. A credit in Carbonized is a token issued by an authorized issuer; a retirement certificate proves a token was burned, not that the underlying project is real.
+</Callout>
+
+## What is in the box
+
+| Layer | What it is |
+| --- | --- |
+| Smart contracts | `CarbonCreditNFT`, `CarbonCreditToken`, `CarbonMarketplace`, `CarbonRegistry`, `CarbonPriceOracle`, `EmissionVerifier`, `RegistrySync` (Solidity 0.8.20, OpenZeppelin 4.9, Chainlink Functions client) |
+| Web app | Standalone app at `/app` with its own dashboard layout and an EN / 中文 language toggle: dashboard, marketplace, auctions, portfolio, sell credits, certificates, credit requests, company and trader onboarding. The marketing site lives at `/`. |
+| Wallet | Reown AppKit (WalletConnect) plus injected wallets such as MetaMask |
+| Backend (optional) | An HTTP API at `NEXT_PUBLIC_BACKEND_URL` for an off-chain depository. Leave it empty unless you run one: it receives company registration details. |
+
+## Where to start
+
+<Cards>
+  <Card title="Quickstart" href="/docs/quickstart">
+    Run the web app and connect a wallet in minutes.
+  </Card>
+  <Card title="Architecture" href="/docs/architecture">
+    How the contracts and the app fit together.
+  </Card>
+  <Card title="Deploy to Robinhood Mainnet" href="/docs/deployment/robinhood-mainnet">
+    Prerequisites, multisig handover and the launch checklist.
+  </Card>
+  <Card title="Deploy to Robinhood Testnet" href="/docs/deployment/robinhood-testnet">
+    Compile, deploy and wire the frontend.
+  </Card>
+  <Card title="Connect a wallet" href="/docs/wallet/reown-appkit">
+    Reown AppKit setup and network details.
+  </Card>
+  <Card title="Smart contracts" href="/docs/contracts/overview">
+    Roles, functions, events and ABIs.
+  </Card>
+  <Card title="Using the app" href="/docs/app/dashboard">
+    Page-by-page guide and step-by-step tutorials.
+  </Card>
+  <Card title="Become an issuer" href="/docs/guides/issuer">
+    Issuer onboarding policy, evidence, serial rules and trust model.
+  </Card>
+  <Card title="FAQ" href="/docs/faq">
+    Short answers about tokens, fees, testnet and limits.
+  </Card>
+  <Card title="Roadmap and limitations" href="/docs/roadmap">
+    What is not built yet.
+  </Card>
+</Cards>

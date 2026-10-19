@@ -1,0 +1,2 @@
+ALTER TABLE "blog_kyc_webhook_events" ADD COLUMN "application_id" text NOT NULL;--> statement-breakpoint
+ALTER TABLE "blog_kyc_webhook_events" ADD CONSTRAINT "blog_kyc_webhook_events_application_id_blog_kyc_applications_id_fk" FOREIGN KEY ("application_id") REFERENCES "public"."blog_kyc_applications"("id") ON DELETE cascade ON UPDATE no action;

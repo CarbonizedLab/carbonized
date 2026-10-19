@@ -1,0 +1,69 @@
+---
+title: Quickstart
+description: Run the Carbonized web app against Robinhood Chain Testnet and make your first transaction.
+---
+
+<Steps>
+<Step>
+
+### Install and configure
+
+```bash
+pnpm install
+cp .env.example .env.local
+```
+
+Set at least the following in `.env.local` (full list in [Environment variables](/docs/deployment/environment-variables)):
+
+```bash
+SKIP_ENV_VALIDATION=1            # skips DB/auth/email validation for local UI work
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+NEXT_PUBLIC_NETWORK=robinhood    # testnet; use robinhood-mainnet only for a real mainnet deployment
+NEXT_PUBLIC_CHAIN_ID=46630
+NEXT_PUBLIC_RPC_URL=https://rpc.testnet.chain.robinhood.com/rpc
+NEXT_PUBLIC_REOWN_PROJECT_ID=your_reown_project_id
+# plus the NEXT_PUBLIC_* contract addresses (including NEXT_PUBLIC_payment token_ADDRESS) from your deployment
+```
+
+Leave `NEXT_PUBLIC_BACKEND_URL` empty unless you run your own backend.
+
+</Step>
+<Step>
+
+### Start the app
+
+```bash
+pnpm dev
+```
+
+Open `http://localhost:3000` for the landing page, or `http://localhost:3000/app` for the web app (its own dashboard layout; use the language toggle in the top bar to switch between English and 中文). If any contract address is missing, a banner lists the missing variables. Because `NEXT_PUBLIC_NETWORK` is not `robinhood-mainnet`, a red/amber "Testnet / unaudited" banner is shown; that is expected.
+
+</Step>
+<Step>
+
+### Connect a wallet
+
+Use **Connect Wallet** (Reown AppKit / WalletConnect, or an injected wallet like MetaMask). Switch to Robinhood Chain Testnet when prompted. See [Reown AppKit](/docs/wallet/reown-appkit) and [Networks](/docs/wallet/networks).
+
+</Step>
+<Step>
+
+### Get test funds
+
+- **Gas (ETH):** `https://faucet.testnet.chain.robinhood.com`
+- **Mock payment token (testnet only):** `MockERC20.mint(address,uint256)` has no access control, so any account can mint itself test payment token. Mind the token's decimals: the app reads `decimals()` of `NEXT_PUBLIC_payment token_ADDRESS`. Mainnet has no mock and no faucet.
+- **Credits:** there is no free-credit path. The app has no starter pack; credits exist only when an authorized issuer has issued them to your wallet (or you buy them on the marketplace).
+
+</Step>
+<Step>
+
+### Try a flow
+
+Follow [Buy credits](/docs/guides/buy-credits), [Sell credits](/docs/guides/sell-credits) or [Run an auction](/docs/guides/run-an-auction).
+
+</Step>
+</Steps>
+
+<Callout title="Need your own contracts?">
+  Deploy them yourself with [Robinhood Testnet deployment](/docs/deployment/robinhood-testnet) or run a local chain with [Local Hardhat](/docs/deployment/local-hardhat). Planning a mainnet launch? Read [Robinhood Chain Mainnet](/docs/deployment/robinhood-mainnet) first.
+</Callout>

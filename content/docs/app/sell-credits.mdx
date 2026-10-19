@@ -1,0 +1,63 @@
+---
+title: Sell Credits
+description: Wrap NFT credits into CCT, then list them at a fixed price or as an auction.
+---
+
+Route: `/app/sell-credits`. The marketplace only trades **CCT**, so NFT credits must be wrapped first.
+
+## What it shows
+
+Stat cards: NFT Credits (count you own), CCT Balance, **Need Wrapping** (`max(NFT-or-depository tonnes − CCT balance, 0)`), Active Listings, Total Listed Value, Avg Price, payment token Balance. The `change` percentages on the cards are decorative constants.
+
+Two tabs:
+
+- **Create Listing** — the form, or the wrap list when you hold no CCT.
+- **Active Listings** — your sell orders and your auctions with amount, price, total value, status and **Cancel**.
+
+## Actions
+
+| Action | Contract calls (in order) | Notes |
+| --- | --- | --- |
+| **Wrap to CCT** (shown when CCT balance is 0, up to 5 non-retired NFTs) | `CarbonCreditNFT.setApprovalForAll(CCT, true)`, then `CarbonCreditToken.wrapCredit(tokenId)` | The NFT moves into the CCT contract; you receive CCT equal to its `co2Tonnes`. NFTs the traded pool (`VERRA_VCS`) would reject (no registry serial, no oracle proof hash, other methodology, retired) are listed with the reason and a disabled button, using the same read-only check as [Tokenize](/docs/app/tokenize#why-a-credit-cannot-be-wrapped). Contract reverts: `Not NFT owner`, `Already wrapped`, `Methodology mismatch`, `Cannot wrap retired credit`, `Unverified credit` (no serial or proof hash). |
+| **Create Listing — Fixed Price** | If the freshly read CCT allowance is below the amount: `CCT.approve(marketplace, amount)`; then `createSellOrder(amount, pricePerTonne, 0, false)` | CCT is locked in the marketplace. The price you type is payment token per tonne; the app converts it with the payment token's `decimals()` read from the chain (`$15` = `15000000` for 6-decimal payment token). It must be at least the marketplace minimum (`minPricePerTonne()`, initially $0.01) and at most `MAX_PRICE_PER_TONNE`. |
+| **Create Listing — Auction** | Same CCT approval; then `createAuction(amount, startPrice, endTime)` | `Starting Bid` is the **total** payment token (payment-token base units onchain). `End Date` is a local date-time converted to an absolute Unix timestamp and must be **between 1 hour and 30 days from now** (`Duration too short` / `Duration too long` otherwise). The starting bid divided by the amount must be within the min/max price per tonne. |
+| **Cancel** (fixed) | `cancelOrder(orderId)` | Unfilled CCT is returned. |
+| **Cancel** (auction) | `cancelAuction(auctionId)` | Only if there are no bids (`Auction has bids`). |
+
+The form refuses amounts above your CCT balance. Every transaction is awaited and a reverted receipt shows an error toast.
+
+**Fee tier line.** When `NEXT_PUBLIC_CARB_STAKING` is configured, the form shows an informational line with your CARB fee tier and the discount from `feeDiscountBpsOf(wallet)` on the marketplace, for example "Tier 2: 25% off the trading fee". The discount applies to the fee, never to the price, on order-book and auction sales where you are the CCT seller, and is read at settlement from your tier at that time. It is shown for information only and changes nothing in the transaction. CARB is not launched yet; see [Staking and tiers](/docs/token/staking-and-tiers).
+
+The app reads `minPricePerTonne()` from the marketplace and shows an inline error such as "Minimum price is $0.01 per tonne" (and disables **Create Listing**) while the entered price, or the auction's starting bid per tonne, is below it. If a transaction still reverts with `Price below minimum`, the app shows the same message in a toast.
+
+<Callout title="Wrapping is per methodology pool">
+  Each `CarbonCreditToken` contract wraps one methodology. The marketplace is deployed against the
+  `VERRA_VCS` pool. An NFT of a different methodology fails with `Methodology mismatch`.
+</Callout>
+
+<Callout type="warn" title="Wrapped credits cannot be retired onchain directly">
+  A wrapped NFT is owned by the CCT contract. To retire it, first unwrap it on the
+  [Tokenize](/docs/app/tokenize) page (Unwrap tab), which burns the matching CCT and returns the NFT.
+  See [Retire credits](/docs/guides/retire-credits).
+</Callout>
+
+## Data sources
+
+| Data | Source |
+| --- | --- |
+| NFT credits, CCT and payment token balances, your orders and auctions | Onchain |
+| "Need Wrapping" equivalent | Onchain NFTs; if you own none, **backend** active depository credits |
+
+## States
+
+| State | Behaviour |
+| --- | --- |
+| Wallet not connected | "Connect Wallet to List Credits". |
+| Loading | Skeletons. |
+| CCT balance is 0 | Form replaced by a notice and the wrap list. |
+| No listings | "You have no active listings" with a **Create First Listing** button. |
+| Contracts not configured | Banner in the shell; reads return empty, so the page behaves as if you own nothing. |
+
+## Related
+
+[Sell credits guide](/docs/guides/sell-credits) · [Run an auction](/docs/guides/run-an-auction) · [CarbonCreditToken reference](/docs/contracts/carbon-credit-token)

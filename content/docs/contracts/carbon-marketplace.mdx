@@ -1,0 +1,211 @@
+---
+title: CarbonMarketplace
+description: Order book, timed auctions and a constant-product AMM for trading CCT against a payment token (payment token), with pull-payment fallback, fee manager and optional KYC gate.
+---
+
+**Inherits:** `AccessControl`, `ReentrancyGuard`, `Pausable`. Uses `SafeERC20` for the payment token.
+
+<Callout type="warn" title="New marketplace deployment">
+  This page describes the audit-fix marketplace. It was **redeployed**; older deployments keep the old ABI (18-decimal price convention, old `addLiquidity` / `removeLiquidity` signatures, no `claim`). The web app expects the new ABI. The contracts are unaudited.
+</Callout>
+
+## Constructor
+
+```solidity
+constructor(address paymentToken_, address carbonToken_, address nftContract_)
+```
+
+All three must be non-zero (`Invalid payment token`, `Invalid carbon token`, `Invalid NFT contract`) and are immutable: `paymentToken`, `carbonToken` (a single `CarbonCreditToken`), `nftContract` (stored, unused by marketplace functions). The constructor:
+
+- reads `decimals()` of the payment token and requires `2 <= decimals <= 18` (`Unsupported payment decimals`); it is stored as the immutable `paymentDecimals`;
+- requires the carbon token to have exactly 18 decimals (`Carbon token must have 18 decimals`);
+- grants the deployer `DEFAULT_ADMIN_ROLE`, `MATCHER_ROLE`, `KYC_ROLE`, `PAUSER_ROLE` and `FEE_MANAGER_ROLE`;
+- sets `minPricePerTonne` to `10**(decimals-2)` (0.01 USD per tonne, `10_000` for 6-decimal payment token).
+
+On mainnet the payment token is the real payment token; on testnet it is a mock.
+
+## Units, prices and fees
+
+| Item | Value |
+| --- | --- |
+| Amounts of CCT | 18 decimals (`1e18` = 1 tonne) |
+| `pricePerTonne` | **payment-token base units per tonne**. With 6-decimal payment token, `$15 / tonne` is `15_000_000`. Do not send `price * 1e18`. Cost = `amount * pricePerTonne / 1e18` |
+| Auction `startPrice`, `bidAmount` | **total** amounts for the whole lot, in payment-token base units |
+| `getPrice()`, `ammPool.lastPrice` | payment-token base units per tonne (not normalised to 1e18) |
+| `tradingFeePercent` | default `25` basis points = 0.25% |
+| `FEE_DENOMINATOR` | `10000` |
+| `MAX_TRADING_FEE` | `100` (1%); `setTradingFee` requires `<= 100` |
+| `minPricePerTonne` | initially `10**(decimals-2)`; admin-adjustable up to `MAX_MIN_PRICE_PER_TONNE` = `1_000_000 * 10**decimals` |
+| `MAX_PRICE_PER_TONNE` | `1_000_000_000 * 10**decimals` (1e9 USD; `1e15` for payment token). Orders and auctions above it revert `Price above maximum`, which catches prices wrongly scaled by 1e18 |
+| `CARBON_UNIT` | `1e18` |
+
+Fees: the fee rate is **snapshotted** when an order or auction is created (`orderFeeBps(orderId)`, `auctionFeeBps(auctionId)`), so later `setTradingFee` calls are not retroactive. Order-book and auction fees are deducted from what the seller or taker receives and are tracked in `accruedFees`; the fee manager sweeps them with `withdrawFees`. The fee is always paid by the CCT seller and may be reduced by the [fee discount](#fee-discount) of that party. AMM swap fees are not tracked there: they stay in the pool reserves and accrue to liquidity providers, and are never discounted.
+
+## Roles
+
+| Role | Used by |
+| --- | --- |
+| `DEFAULT_ADMIN_ROLE` | Role management, and everything `PARAMETER_ROLE` can do (via `onlyParameterAdmin`) |
+| `PARAMETER_ROLE` | `setTradingFee`, `setMinPricePerTonne`, `setKYCGate`, `setFeeDiscountProvider`. Intended for a governance timelock. **Not granted by the constructor**; the admin grants it. It cannot pause, manage roles, set KYC status, withdraw fees or touch escrow. |
+| `FEE_MANAGER_ROLE` | `withdrawFees` only. It can only move the tracked `accruedFees`, never escrow, pending withdrawals or AMM reserves |
+| `KYC_ROLE` | `setKYCStatus` |
+| `PAUSER_ROLE` | `pause`, `unpause` |
+| `MATCHER_ROLE` | Declared and granted to the deployer; reserved, **not used** by any function |
+
+The four parameter setters use the `onlyParameterAdmin` modifier: the caller must hold `PARAMETER_ROLE`, or else `DEFAULT_ADMIN_ROLE`. All roles are OpenZeppelin `AccessControl` roles and can be granted to a multisig with `grantRole`, after which the deployer should `renounceRole`.
+
+## Fee discount
+
+The marketplace can read an optional fee-discount provider (`feeDiscountProvider`, `address(0)` = off) that implements `IFeeDiscount.discountBps(user)`. `CarbStaking` is such a provider: its tier is the discount, see [CarbStaking](/docs/contracts/carb-staking). The discount applies to the trading **fee**, never to the price.
+
+| Item | Behavior |
+| --- | --- |
+| Who pays the fee | the **CCT seller**: the maker of a sell order, the taker of a buy order, the seller of an auction. That party's discount is the one applied. |
+| Where it applies | `fillOrder` and `finalizeAuction`. **AMM swap fees are not discounted**; they stay in the pool for liquidity providers. |
+| Discount value | `discountBps` is the share of the fee waived, in bps of the fee (`5000` = 50 % off the fee). Clamped to `MAX_FEE_DISCOUNT_BPS` = `5000` whatever the provider returns. |
+| Formula | `fee = amount * baseBps * (10000 - discount) / 10000^2`, with `baseBps` the **snapshotted** `orderFeeBps` / `auctionFeeBps` |
+| Snapshot semantics | The base fee is snapshotted at order or auction creation. The discount multiplies that snapshot, so it can only lower, never raise, the fee, and later `setTradingFee` calls do not touch open orders. The discount follows the seller's **current** tier at settlement, so a seller who unstakes stops getting it on fills that happen afterwards. |
+| How it is read | one `staticcall` to the provider with at most `DISCOUNT_GAS_LIMIT` = 60,000 gas, and at most 32 bytes of return data are copied. A provider that reverts, runs out of gas, returns short or empty data, or is not a contract means **no discount**. Trading is never blocked by the provider. |
+| `feeDiscountBpsOf(user)` | view of the discount `user` would currently get (`0` if no provider or the provider misbehaves); the app shows it as an informational line |
+| Event | `FeeDiscountApplied(payer, discountBps, feeCharged)` when a discount applies |
+
+The 60,000-gas call follows the EIP-150 63/64 rule: a transaction sent with barely enough gas could run out of gas after a failed provider call, so use normal gas estimation.
+
+## Order book
+
+```solidity
+struct Order {
+    uint256 orderId; address trader; bool isBuyOrder;
+    uint256 amount; uint256 pricePerTonne; uint256 filled;
+    bool isActive; uint256 createdAt; uint256 expiresAt; bool requiresKYC;
+}
+```
+
+| Function | Behavior | Reverts |
+| --- | --- | --- |
+| `createBuyOrder(amount, pricePerTonne, expiresIn, requiresKYC_)` | Escrows `amount * price / 1e18` payment tokens. `expiresIn = 0` means never. Returns `orderId`. | `Invalid amount`, `Price below minimum`, `Price above maximum`, `KYC required` (if `requiresKYC_` and the caller is not verified) |
+| `createSellOrder(...)` | Same args. Escrows `amount` CCT (needs CCT `approve`). | same |
+| `fillOrder(orderId, amount)` | Partial fills allowed. See below. | `Order not active`, `Cannot fill own order`, `Order expired`, `Invalid fill amount`, `KYC required`, `Maker KYC revoked`, `Fill too small` (cost rounds to 0) |
+| `cancelOrder(orderId)` | Creator only. Refunds the unfilled escrow (payment tokens for buys, CCT for sells). Not pause-gated, works on expired orders, and makers can always cancel even if their KYC was revoked. | `Not order creator`, `Order not active` |
+
+`createBuyOrder`, `createSellOrder`, `fillOrder` are `whenNotPaused` and `nonReentrant`.
+
+`fillOrder`, with `cost = amount * pricePerTonne / 1e18` and `fee = cost * orderFeeBps / 10000`:
+
+| Order type | Taker pays | Maker receives | Taker receives |
+| --- | --- | --- | --- |
+| Buy order (taker sells CCT) | `amount` CCT, sent directly to the buyer | the CCT | `cost - fee` from the buyer's escrow |
+| Sell order (taker buys CCT) | `cost` payment tokens | `cost - fee` (see pull payments) | `amount` CCT from escrow |
+
+When `filled == amount` the order is deactivated. Emits `OrderFilled(orderId, taker, amountFilled, totalCost)`. Anyone fills orders directly; orders are not matched against each other.
+
+## Auctions
+
+```solidity
+struct Auction {
+    uint256 auctionId; address seller; uint256 amount;
+    uint256 startPrice; uint256 highestBid; address highestBidder;
+    uint256 startTime; uint256 endTime; bool isActive;
+}
+```
+
+| Function | Behavior | Reverts |
+| --- | --- | --- |
+| `createAuction(amount, startPrice, endTime)` | Escrows `amount` CCT. `endTime` is an **absolute** Unix timestamp with `now + 1 hour <= endTime <= now + 30 days`. The implied price per tonne `startPrice * 1e18 / amount` must be within the min/max price bounds. `kycGate`. | `Invalid amount`, `Invalid start price`, `Price below minimum`, `Price above maximum`, `Duration too short`, `Duration too long`, `KYC required` (only if the KYC gate is on) |
+| `placeBid(auctionId, bidAmount)` | Pulls `bidAmount`, then refunds the previous highest bidder (pull-payment fallback). `kycGate`. | `Auction not active`, `Auction ended`, `Seller cannot bid`, `Bid below start price`, `Bid too low` (must exceed `highestBid`; no minimum increment) |
+| `finalizeAuction(auctionId)` | Callable by **anyone** after `endTime`. With no bids CCT returns to the seller; otherwise the seller gets `highestBid - fee` and the winner gets the CCT. Not pause-gated. | `Auction not active`, `Auction not ended` |
+| `cancelAuction(auctionId)` | Seller only, only while there are no bids. Returns CCT. | `Not auction creator`, `Auction not active`, `Auction has bids` |
+
+Constants: `MIN_AUCTION_DURATION` = 1 hour (`3600`), `MAX_AUCTION_DURATION` = 30 days. Events: `AuctionCreated`, `BidPlaced`, `AuctionFinalized(auctionId, winner, winningBid)` (winner `address(0)`, bid `0` when unsold), `AuctionCancelled`.
+
+## Pull payments: `claim()`
+
+Outbid refunds, auction seller proceeds and sell-order maker proceeds are pushed to the recipient directly. If the payment token refuses the transfer (for example a payment token blacklist), the amount is credited to `pendingWithdrawals[address]` and `PaymentDeferred(to, amount)` is emitted, so one failing recipient cannot block settlement for everyone else.
+
+| Function | Behavior |
+| --- | --- |
+| `claim()` | Pays out the caller's entire `pendingWithdrawals` and emits `PaymentClaimed`. Reverts `Nothing to claim` when the balance is zero, and reverts if the token still refuses to pay the caller. |
+| `pendingWithdrawals(address)` | View of the claimable balance. The web app shows a **Claim** banner when it is above zero. |
+
+## AMM pool
+
+```solidity
+struct Pool { uint256 carbonReserve; uint256 stableReserve; uint256 totalLPTokens; uint256 lastPrice; uint256 lastUpdate; }
+```
+
+A single pool (`ammPool`) for the CCT / payment-token pair. LP shares are an internal mapping `lpTokens`, **not** an ERC-20. The AMM functions exist onchain but are **not wired into the web app UI**.
+
+| Function | Behavior | Reverts |
+| --- | --- | --- |
+| `addLiquidity(carbonDesired, stableDesired, carbonMin, stableMin, minLiquidity)` returns `(carbonUsed, stableUsed, lpMinted)` | Uniswap-V2-router style: only the proportional amounts are pulled, so approve at least the desired amounts. The first deposit permanently locks `MINIMUM_LIQUIDITY` (1000) LP shares and must satisfy `sqrt(carbon * stable) > 1000`. `whenNotPaused`, `kycGate`. | slippage reverts when less than `carbonMin` / `stableMin` is deposited or fewer than `minLiquidity` shares are minted |
+| `removeLiquidity(lpAmount, carbonMin, stableMin)` returns `(carbonAmount, stableAmount)` | Burns LP and returns the pro-rata reserves. Never pause- or KYC-gated. | `Invalid LP amount`, `Insufficient liquidity burned`, `Carbon below minimum`, `Stable below minimum` |
+| `swap(carbonToStable, amountIn, minAmountOut)` | Constant product on `amountIn - fee`. `true` sells CCT, `false` buys CCT. `whenNotPaused`, `kycGate`. | `Invalid input`, `No liquidity`, `Insufficient output` (zero output), `Slippage exceeded`, `Insufficient liquidity` |
+| `quoteAddLiquidity(carbonDesired, stableDesired)` (view) | Previews `(carbonUsed, stableUsed, lpMinted)`; derive the min parameters from it (for example 99.5% of the quote). | none |
+
+Swap math: `fee = amountIn * tradingFeePercent / 10000`; `out = inAfterFee * reserveOut / (reserveIn + inAfterFee)`. The full `amountIn` (fee included) is added to the reserve, so the fee accrues to LPs. `lastPrice` is set to `stableReserve * 1e18 / carbonReserve`. Emits `Swap(trader, carbonToStable, amountIn, amountOut, fee)`. `getPrice()` returns the same spot price (`0` if the pool is empty). There is no deadline parameter.
+
+## KYC
+
+KYC is an onchain whitelist flag (`kycVerified`) set by `KYC_ROLE`; no external provider is integrated.
+
+- **Order book (opt-in):** an order created with `requiresKYC_ = true` needs a KYC'd creator. At fill time the taker must be KYC'd **and** the maker is re-checked (`Maker KYC revoked`). Makers can always cancel.
+- **AMM and auctions:** non-KYC by default. The admin can call `setKYCGate(true)`; then `addLiquidity`, `swap`, `createAuction` and `placeBid` revert `KYC required`. Exits (`removeLiquidity`, `cancelOrder`, `cancelAuction`, `finalizeAuction`, `claim`) are never gated.
+- KYC does not follow the CCT ERC-20 once it is transferred (a documented limitation).
+
+## Views
+
+`getPrice()`, `quoteAddLiquidity`, `getOrder(id)`, `getAuction(id)`, `getUserOrders(user)`, `getUserAuctions(user)`, and the public getters `orders`, `auctions`, `kycVerified`, `kycGateEnabled`, `lpTokens`, `userOrders`, `userAuctions`, `ammPool`, `nextOrderId`, `nextAuctionId`, `tradingFeePercent`, `accruedFees`, `pendingWithdrawals`, `orderFeeBps`, `auctionFeeBps`, `minPricePerTonne`, `MAX_MIN_PRICE_PER_TONNE`, `DEFAULT_MIN_PRICE_PER_TONNE`, `MAX_PRICE_PER_TONNE`, `paymentToken`, `paymentDecimals`, `carbonToken`, `nftContract`, `MINIMUM_LIQUIDITY`, `MIN_AUCTION_DURATION`, `MAX_AUCTION_DURATION`, `MAX_TRADING_FEE`, `FEE_DENOMINATOR`, `CARBON_UNIT`. Ids start at `1`.
+
+Fee-discount reads: `feeDiscountProvider`, `feeDiscountBpsOf(user)`, `MAX_FEE_DISCOUNT_BPS`, `DISCOUNT_GAS_LIMIT`.
+
+## Admin
+
+| Function | Role | Behavior |
+| --- | --- | --- |
+| `setKYCStatus(user, status)` | `KYC_ROLE` | Sets `kycVerified[user]`, emits `KYCStatusUpdated` |
+| `setKYCGate(enabled)` | `onlyParameterAdmin` | Toggles the optional global KYC gate, emits `KYCGateUpdated` |
+| `setTradingFee(newFeePercent)` | `onlyParameterAdmin` | `<= 100` or `Fee too high`. Applies to orders and auctions created afterwards and to AMM swaps. Emits `TradingFeeUpdated(oldFee, newFee)`. |
+| `setMinPricePerTonne(newMinPrice)` | `onlyParameterAdmin` | Requires `newMinPrice > 0` (`Invalid min price`) and `<= MAX_MIN_PRICE_PER_TONNE` (`Min price too high`). Emits `MinPriceUpdated(oldPrice, newPrice)`. Already-open orders are unaffected. |
+| `setFeeDiscountProvider(provider)` | `onlyParameterAdmin` | `address(0)` turns discounts off; otherwise `provider` must be a contract (`Provider not a contract`). Emits `FeeDiscountProviderUpdated(oldProvider, newProvider)`. |
+| `withdrawFees(to)` | `FEE_MANAGER_ROLE` | Sends all `accruedFees` to `to` (non-zero address, `No fees` if empty), emits `FeesWithdrawn(to, amount)` |
+| `pause()` / `unpause()` | `PAUSER_ROLE` | Pauses creation, fills, bids, liquidity add and swaps. Cancels, finalization, liquidity removal and `claim` still work. |
+
+## Events
+
+| Event | Parameters |
+| --- | --- |
+| `OrderCreated` | `uint256 indexed orderId, address indexed trader, bool isBuyOrder, uint256 amount, uint256 pricePerTonne` |
+| `OrderFilled` | `uint256 indexed orderId, address indexed taker, uint256 amountFilled, uint256 totalCost` |
+| `OrderCancelled` | `uint256 indexed orderId` |
+| `AuctionCreated` | `uint256 indexed auctionId, address indexed seller, uint256 amount, uint256 startPrice, uint256 endTime` |
+| `BidPlaced` | `uint256 indexed auctionId, address indexed bidder, uint256 bidAmount` |
+| `AuctionFinalized` | `uint256 indexed auctionId, address indexed winner, uint256 winningBid` |
+| `AuctionCancelled` | `uint256 indexed auctionId` |
+| `LiquidityAdded` | `address indexed provider, uint256 carbonAmount, uint256 stableAmount, uint256 lpTokens` (amounts actually deposited) |
+| `LiquidityRemoved` | `address indexed provider, uint256 carbonAmount, uint256 stableAmount, uint256 lpTokens` |
+| `Swap` | `address indexed trader, bool carbonToStable, uint256 amountIn, uint256 amountOut, uint256 fee` |
+| `KYCStatusUpdated` | `address indexed user, bool status` |
+| `KYCGateUpdated` | `bool enabled` |
+| `MinPriceUpdated` | `uint256 oldPrice, uint256 newPrice` |
+| `TradingFeeUpdated` | `uint256 oldFee, uint256 newFee` |
+| `FeesWithdrawn` | `address indexed to, uint256 amount` |
+| `PaymentDeferred` | `address indexed to, uint256 amount` |
+| `PaymentClaimed` | `address indexed to, uint256 amount` |
+| `FeeDiscountProviderUpdated` | `address indexed oldProvider, address indexed newProvider` |
+| `FeeDiscountApplied` | `address indexed payer, uint256 discountBps, uint256 feeCharged` (emitted only when a discount greater than zero applied; `discountBps` is in bps **of the fee**) |
+
+## Approvals required by callers
+
+Approvals in the web app are exact bigint amounts (payment token cost rounded up). The allowance is re-read before each transaction and re-approved when short.
+
+| Action | Approve |
+| --- | --- |
+| `createSellOrder`, `createAuction`, `fillOrder` on a buy order, `swap(true, ...)`, `addLiquidity` (carbon side) | CCT `approve(marketplace, amount)` |
+| `createBuyOrder`, `fillOrder` on a sell order, `placeBid`, `swap(false, ...)`, `addLiquidity` (stable side) | payment token `approve(marketplace, amount)` where the amount is `amount * price / 1e18` in payment-token base units |
+
+## Notes
+
+- CCT transfers use plain `transferFrom`/`transfer` (not `SafeERC20`); the OpenZeppelin CCT reverts on failure, so this is safe for this token.
+- Buy-order cancellation refunds `unfilled * price / 1e18`, recomputed from the unfilled amount, which can differ from escrow by rounding dust when partially filled.
+- Orders store `requiresKYC` at creation; `expiresAt = type(uint256).max` when no expiry is set.
+- The minimum and maximum price are enforced on the order book and auctions. `addLiquidity` and `swap` have no price input (the price is derived from pool reserves).

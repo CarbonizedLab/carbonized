@@ -1,0 +1,25 @@
+---
+title: What CARB does not do
+description: The deliberate limits of CARB - no revenue share, no rewards or APY, no buy-back, no mint, no control over issuance or escrow, no claim on credits or treasury, no AMM discount.
+---
+
+<Callout type="error" title="Legal notice">
+  Not investment advice. Not an offer or solicitation. May be restricted in your jurisdiction. No returns are promised. The contracts are unaudited. Get your own advice.
+</Callout>
+
+These are design decisions, not omissions. Any user-facing description of CARB must stay consistent with this list.
+
+| CARB does not | Detail |
+| --- | --- |
+| Share revenue | No profit share, revenue share, dividend, fee distribution or payment of any kind to holders or stakers. |
+| Pay rewards | No staking rewards, emissions, inflation, reward token, APY or lock-up bonus. Staking only unlocks a fee tier. |
+| Buy back | No buy-back, burn programme or price support. The only supply reductions are holders burning their own tokens and slashing of issuer bonds. |
+| Mint | Fixed supply minted once in the constructor. No mint function, no owner, no pause, no blacklist, no transfer tax, no rebasing, no upgradeability on the token. |
+| Control credit issuance | The NFT `ISSUER_ROLE` and `ISSUER_ADMIN_ROLE` are never given to governance. The optional bond path is an alternative way to hold the issuer role, not governance over issuance. |
+| Control escrow | Nothing in the marketplace can move user escrow, and governance holds no role that could. |
+| Represent a claim | Not a claim on carbon credits, on the protocol's treasury, on fees or on any asset. |
+| Discount AMM swaps | The fee discount covers order-book and auction sales by the CCT seller only. AMM swap fees stay with liquidity providers. |
+| Discount prices | The discount applies to the trading fee only, at most 50 percent of the fee, never to the price of a credit. |
+| Give votes while staked | Staked and bonded CARB carry no voting power. |
+
+See [Staking and tiers](/docs/token/staking-and-tiers), [Governance](/docs/token/governance) and [Risks and legal](/docs/token/risks-and-legal).

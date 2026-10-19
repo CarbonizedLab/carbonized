@@ -1,0 +1,65 @@
+---
+title: "Carbonized Is Live on Robinhood Chain Mainnet: A Controlled Beta, Explained"
+description: "What is deployed on Robinhood Chain mainnet, who controls it, what is still missing, and what has to happen before Carbonized opens to the public."
+date: 2026-10-19
+tags: ['carbonized', 'mainnet', 'robinhood-chain', 'roadmap']
+image: /images/blog/carbonized-controlled-mainnet-robinhood-chain.jpg
+imageCredit: "Photo: Wind turbines at sunrise (Unsplash), CC0 — https://commons.wikimedia.org/wiki/File:Wind_turbines_at_sunrise_(Unsplash).jpg"
+author: Carbonized
+---
+
+**TL;DR:** The Carbonized contracts are deployed on Robinhood Chain mainnet (chain id `4663`) as a **controlled beta**. Settlement uses USDG, administration is held by a Safe, and the deployer account holds no roles. There is **no independent audit yet**, the marketplace has **no verified inventory yet**, and the CARB token has **not launched**. This post lists exactly what is true today so you do not have to guess.
+
+This follows the [testnet status report](/blog/carb-testnet-launch-robinhood-chain). That post described a prototype. This one describes the next step, and it is deliberately more cautious than the word "mainnet" suggests.
+
+## What is deployed
+
+Nine contracts are live on Robinhood Chain mainnet, including the credit NFT, the wrapped credit token, the marketplace and the oracle contracts. You can inspect them on the [explorer](https://robinhoodchain.blockscout.com).
+
+| Item | Address |
+| --- | --- |
+| Admin (Safe) | [`0x31fec676cA08ef86A780917D25470B23C0d9219c`](https://robinhoodchain.blockscout.com/address/0x31fec676cA08ef86A780917D25470B23C0d9219c) |
+| Carbon credit NFT | [`0xa4300a54F4fF82CBcBde29aDC8c0aDf3d8707D9D`](https://robinhoodchain.blockscout.com/address/0xa4300a54F4fF82CBcBde29aDC8c0aDf3d8707D9D) |
+| Payment token (USDG) | [`0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168`](https://robinhoodchain.blockscout.com/address/0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168) |
+
+The payment token is the canonical USDG on this chain, not a mock. Real value moves through the marketplace, which is the reason the rest of this post is about limits rather than features.
+
+## Who controls it
+
+Every privileged role is held by a Safe smart-account wallet controlled by the team, not by a server. The account that deployed the contracts renounced all of its roles after setup, so it can no longer mint credits, pause contracts, set fees or grant access.
+
+The Safe currently has one signer, so this is a single point of control. We will move it to a multi-signer threshold before any public rollout, and role changes have no timelock yet. The [roadmap](/docs/roadmap) lists this as a known limitation.
+
+## What is gated
+
+Marketplace access is KYC-gated onchain. An address that has not been approved cannot trade. The identity workflow that sets that eligibility is built and fails closed: until the provider is switched on, nobody is approved by accident.
+
+Credits can only be created by an address holding an issuer role. The first issuer is a dedicated Carbonized wallet, and the credits listed at launch are **demo inventory**: each carries a `CBZ-SEED-` serial, is labelled `demo_inventory` in its metadata, and links to the public Verra registry page of the project it references. They are **not** transferable Verra VCUs.
+
+## What is not ready
+
+We would rather you hear this from us:
+
+- **No independent audit.** The contracts went through repeated internal reviews and a large test suite. That is not a professional audit and we will not call it one. A public rollout waits for an external report.
+- **No verified inventory.** Listed credits are labelled demo inventory and do not claim to be verified credits.
+- **No registry attestation yet.** Issuance quality depends on who holds the issuer role until external registry evidence is wired in.
+- **KYC is not live.** The flow exists, the provider is not enabled.
+- **CARB has not launched.** When it does, the contract address will be published on the site and verifiable on the explorer. Until then, any address you see attributed to CARB is not ours.
+
+## What happens next
+
+The order matters more than the dates, and we are not publishing dates:
+
+1. Authorise real issuers and replace demo inventory with verified listings.
+2. Turn on verification onboarding.
+3. Complete and publish an independent security audit.
+4. Add registry attestation.
+5. Only then, open to the public and announce CARB.
+
+The same sequence is on the [roadmap page](/roadmap). If something there changes, the page changes first.
+
+## If you want to try it
+
+The app is open for exploration at [/app](/app). Do not treat anything in it as an investment or as a verified emissions reduction. The credits are issued by an authorised issuer, not independently verified, and the contracts are unaudited.
+
+If you find a problem, message [@CarbonizedApp](https://x.com/CarbonizedApp). A reported bug before the public rollout is worth far more than one found after it.

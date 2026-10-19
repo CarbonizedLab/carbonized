@@ -1,0 +1,235 @@
+---
+title: Roles & Security
+description: Access-control roles, who holds them after deployment, protection mechanisms, and known limitations and security notes for the Carbonized contracts.
+---
+
+<Callout type="warn" title="Not professionally audited">
+  The contracts have **not** been audited by an independent firm. They were changed after an internal automated review (see [Known limitations](#known-limitations-and-security-notes)), which is not a professional audit and not a substitute for one. Do not rely on them for material value until an independent audit report is published.
+</Callout>
+
+## Access control
+
+All core, oracle and bond/staking contracts use OpenZeppelin `AccessControl`; `CarbToken` has no roles and `CarbGovernor` is governed by token votes. `DEFAULT_ADMIN_ROLE` is the admin of every role except `ISSUER_ROLE`, whose admin is `ISSUER_ADMIN_ROLE` (administered in turn by `DEFAULT_ADMIN_ROLE`), so the admin can still grant and revoke any role. Every role of every contract can be granted to a multisig with `grantRole`, and the deployer should then `renounceRole`, so no single key holds issuance, pause or KYC power. This is an operator step: nothing forces it onchain. See [Robinhood Chain Mainnet](/docs/deployment/robinhood-mainnet).
+
+### Roles per contract
+
+| Contract | Role | Gates |
+| --- | --- | --- |
+| `CarbonCreditNFT` | `DEFAULT_ADMIN_ROLE` | role management, administers `ISSUER_ADMIN_ROLE` |
+| | `ISSUER_ADMIN_ROLE` | admin of `ISSUER_ROLE`: grants and revokes it (multisig; also `IssuerBond`) |
+| | `ISSUER_ROLE` | `mintCredit`, `batchMint` |
+| | `PAUSER_ROLE` | `pause`, `unpause` |
+| | `ORACLE_ROLE` | `updateVerification` |
+| | `VERIFIER_ROLE` | nothing (declared only) |
+| `CarbonCreditToken` | `DEFAULT_ADMIN_ROLE` | role management |
+| | `PAUSER_ROLE` | `pause`, `unpause` |
+| | `WRAPPER_ROLE` | nothing (declared only; wrapping is permissionless for eligible credits) |
+| `CarbonMarketplace` | `DEFAULT_ADMIN_ROLE` | role management, and every `onlyParameterAdmin` setter: `setTradingFee`, `setMinPricePerTonne`, `setKYCGate`, `setFeeDiscountProvider` |
+| | `PARAMETER_ROLE` | the same four `onlyParameterAdmin` setters (not granted by the constructor; intended for the governance timelock) |
+| | `FEE_MANAGER_ROLE` | `withdrawFees` (only the tracked `accruedFees`) |
+| | `KYC_ROLE` | `setKYCStatus` |
+| | `PAUSER_ROLE` | `pause`, `unpause` |
+| | `MATCHER_ROLE` | nothing (declared only) |
+| `CarbonPriceOracle` | `DEFAULT_ADMIN_ROLE` | `setFunctionsConfig`, `setSource`, `setDONHostedSecrets`, `setPriceSources`, `setMaxSourceSpread`, `setMaxReportDeviation`, `setUpdateInterval`, `setVolatilityThreshold`, `setPriceBounds`, `setMinConfidence`, `setMaxStaleness`, `grantAutomationRole` |
+| | `PRICE_UPDATER_ROLE` | `updatePrice`, `updateAllPrices` |
+| | `AUTOMATION_ROLE` | `performUpkeep` |
+| | `ORACLE_REPORTER_ROLE` | `reportPrice` (manual fallback; not granted by the constructor; for a multisig) |
+| `EmissionVerifier` | `DEFAULT_ADMIN_ROLE` | `setFunctionsConfig`, `setSource`, `setDONHostedSecrets`, `setCrossCheckTolerance`, `grantAutomationRole` |
+| | `PROJECT_REGISTRAR_ROLE` | `registerProject` |
+| | `VERIFIER_ROLE` | `deactivateProject`, `requestVerification` |
+| | `AUTOMATION_ROLE` | `performUpkeep` |
+| `RegistrySync` | `DEFAULT_ADMIN_ROLE` | `addRegistry`, `setRegistryEndpoint`, `setRegistryStatus`, `setFunctionsConfig`, `setSource`, `setDONHostedSecrets` |
+| | `VERIFIER_ROLE` | `checkRegistry`, `batchCheckRegistry` |
+| | `ORACLE_ROLE` | nothing (declared only) |
+| `CarbonRegistry` | `DEFAULT_ADMIN_ROLE` | role management |
+| | `VERIFIER_ROLE` | `setCompanyVerified` (KYB) |
+| | `PAUSER_ROLE` | `pause`, `unpause` |
+| `CarbStaking` | `DEFAULT_ADMIN_ROLE` | role management |
+| | `PARAMETER_ROLE` | `setTierThresholds`, `setTierDiscounts` |
+| `IssuerBond` | `DEFAULT_ADMIN_ROLE` | role management, `setIssuerBlocked` |
+| | `PARAMETER_ROLE` | `setMinBond`, `setBondRequired`, `setSlashTreasury` |
+| | `SLASHER_ROLE` | `proposeSlash`, `cancelSlash`, `executeSlash` of a disputed proposal |
+| `CarbToken` | none | no roles, no owner |
+| `CarbGovernor` | none | `setTargetAllowed` and bounded settings are `onlyGovernance` (a passed proposal) |
+| `CarbTimelock` | `PROPOSER_ROLE`, `EXECUTOR_ROLE`, `CANCELLER_ROLE`, `TIMELOCK_ADMIN_ROLE` | standard `TimelockController`; intended to be self-administered (see [CarbGovernor](/docs/contracts/carb-governor#carbtimelock)) |
+
+### Who holds roles after deployment
+
+Constructors grant the **deployer** account the roles listed in each contract's page (the `CarbonRegistry` grants them to the `admin` constructor argument instead). The testnet deployment script then adds:
+
+| Deployment action | Effect |
+| --- | --- |
+| `nft.grantRole(ISSUER_ROLE, EmissionVerifier)` | The verifier can mint credits through `claimCredits` |
+| `nft.grantRole(ISSUER_ROLE, deployer)` | The deployer can issue credits directly with `mintCredit` / `batchMint` |
+| `token.grantRole(WRAPPER_ROLE, deployer)` for each CCT | No functional effect (role unused) |
+| `marketplace.grantRole(KYC_ROLE, deployer)` | Already held from the constructor; redundant |
+
+Not done by the deployment: `ORACLE_ROLE` on the NFT, `AUTOMATION_ROLE` on the oracles, `ORACLE_REPORTER_ROLE` on the price oracle, `setFunctionsConfig` or `setSource` on any Functions client. The registry needs **no** role on the NFT. Everything else stays with the single deployer key until the roles are handed over. The CARB token stack is not part of the testnet deployment.
+
+<Callout type="warn" title="Single admin key until handover">
+Until the roles are granted to a multisig and renounced by the deployer, one externally owned account holds admin, pauser, issuer, KYC and fee-management powers across the contracts it deployed. That is a centralised, test-grade setup. The `ISSUER_ROLE` holder decides which credits exist, so issuance quality depends entirely on who holds it: see [Become an issuer](/docs/guides/issuer) for the onboarding policy and the [Issuer page](/docs/app/issuer) for the public issuer list and role management.
+</Callout>
+
+## Reentrancy and pausing
+
+| Contract | `nonReentrant` | `whenNotPaused` |
+| --- | --- | --- |
+| `CarbonCreditNFT` | `mintCredit`, `batchMint`, `retireCredit`, `batchRetire` | mint functions, and **all transfers and burns** through `_beforeTokenTransfer` |
+| `CarbonCreditToken` | `wrapCredit`, `batchWrap`, `unwrapCredit`, `unwrapAny` | wrapping, and all ERC-20 mint/burn/transfer through `_beforeTokenTransfer` |
+| `CarbonMarketplace` | every state-changing user function (including `claim`, `withdrawFees`) | create order/auction, `fillOrder`, `placeBid`, `addLiquidity`, `swap` |
+| `CarbonRegistry` | not used | every state-changing user function and `setCompanyVerified` |
+| `EmissionVerifier` | `claimCredits`, internal `_requestVerification` | not pausable |
+| `RegistrySync` | `checkRegistry`, `batchCheckRegistry` | not pausable |
+| `CarbonPriceOracle` | not used | not pausable |
+| `CarbStaking` | `stake`, `unstake`, `withdraw` | not pausable: no role can pause or freeze staked tokens |
+| `IssuerBond` | `bond`, `startUnbond`, `withdraw`, `executeSlash` | not pausable |
+| `CarbToken`, `CarbGovernor`, `CarbTimelock` | not used | no pause (the token has no admin at all) |
+
+Pausing the NFT or a CCT freezes transfers, so escrowed positions in the marketplace can be affected indirectly (for example a cancel that returns CCT reverts while that CCT is paused). `MaliciousRetirer` is a test helper for reentrancy on `retireCredit`.
+
+## Marketplace protections
+
+- **Decimals-correct prices.** Prices are payment-token base units per tonne; `MAX_PRICE_PER_TONNE` rejects prices that were mistakenly scaled by `1e18`, and `minPricePerTonne` rejects dust prices.
+- **Pull payments.** If the payment token refuses a transfer (for example a payment token blacklist), the amount is credited to `pendingWithdrawals` and claimed with `claim()`, so one blocked address cannot freeze an auction or an order.
+- **Fee isolation.** `FEE_MANAGER_ROLE` can only withdraw tracked `accruedFees`, never escrow, pending withdrawals or AMM reserves. Fee rates are snapshotted per order and auction.
+- **AMM.** Slippage parameters on add and remove liquidity, proportional deposits (Uniswap-V2 style) and a permanently locked `MINIMUM_LIQUIDITY` of 1000 shares protect against first-depositor manipulation. The AMM functions are not wired into the web app.
+- **Auction bounds.** End time must be 1 hour to 30 days ahead.
+- **KYC.** Opt-in per order; optional global gate for AMM and auctions. Exits are never gated. KYC does not follow the CCT token once it is transferred.
+
+## Double-counting prevention
+
+1. **Onchain serial key.** `mintCredit` and `batchMint` compute a canonical key from the serial (trimmed, upper-cased, hashed with `abi.encode`) and revert if it is already in `issuedSerials`. The methodology label is not part of the key. A serial is mandatory.
+2. **No double tokenization after wrapping.** A wrapped NFT is locked in the CCT contract and `wrappedNFTs` blocks re-wrapping; retired credits cannot be wrapped (`Cannot wrap retired credit`).
+3. **Retirement is final.** `retireCredit` sets `isRetired`, stores a certificate and burns the token. The serial key is never cleared, so a retired serial cannot be minted again.
+4. **External registries (advisory).** `RegistrySync` can record whether a serial still circulates at Verra / Gold Standard / a national registry (flagged as used) or was found retired there (cleared). Nothing in `CarbonCreditNFT` consults it: an issuer must consult it before issuing.
+
+## Issuance and verification flow
+
+```text
+ISSUER_ROLE holder  mintCredit / batchMint  -> credits (serial + oracle proof hash required)
+
+PROJECT_REGISTRAR  registerProject(..., iotEndpoint, crossCheckUrl, ...)   EmissionVerifier
+Automation / VERIFIER  performUpkeep / requestVerification    -> Functions request [projectId, endpoint, crossCheck, tolerance, from, to]
+Chainlink DON      runs the uploaded source (setSource) against the operator-provided endpoints
+Router             fulfillRequest(requestId, response, err)   -> records measurement + confidence only
+Anyone             claimCredits(requestId)                    -> nft.mintCredit(owner, ..., oracleProofHash = requestId)
+```
+
+What the chain enforces: only the configured router can deliver `fulfillRequest` (Chainlink `FunctionsClient` behavior), the answer must be exactly `abi.encode(measuredEmissions, confidence)` with a non-zero measurement and a confidence of 1 to 100, a credit can only be claimed at confidence 90 or more, the verifier needs `ISSUER_ROLE` to mint, and the NFT rejects zero proof hashes, empty serials and duplicate serials. `targetReduction` is not compared, so the quality of verification rests on the off-chain JavaScript, on the endpoints chosen by registrars and on trusting the DON. When a credit is minted by an operator with `mintCredit`, the NFT cannot tell whether the `oracleProofHash` is genuine.
+
+## Known limitations and security notes
+
+<Callout type="warn" title="Internal automated review, not a professional audit">
+  The findings below come from an internal automated review of the contracts and the web app. Findings marked as confirmed were reproduced with a local proof of concept on an in-process Hardhat network; nothing was sent to a live network. This is **not** a professional audit and not a substitute for one. It did not check that deployed bytecode matches the source, and it did not exercise a real Chainlink Functions router.
+</Callout>
+
+### Fixed since the internal review
+
+| Area | Problem found | Current behavior |
+| --- | --- | --- |
+| NFT / registry | Public faucets (`registerAndClaimCredits`, `mintSimpleCredits`, registry starter credits) gave free credits to any wallet | Removed. Credits exist only when an `ISSUER_ROLE` account creates them; the registry mints nothing |
+| NFT | Serial key included the methodology label, used ambiguous `abi.encodePacked` and accepted an empty serial | Canonical key (trimmed, upper-cased, `abi.encode`), methodology not in the key, serial mandatory |
+| NFT | `batchMint` skipped the `mintCredit` validation | Same validation per item; 10,000,000 tonne cap and 2015 to 2050 vintage range; reentrancy guard and state written before `_safeMint` |
+| CCT | A free junk credit could be swapped for a verified one; `unwrapAny` scanned a shrinking id range and could be gas-griefed; a 1-wei `burn()` broke the 1:1 backing | Wrap requires matching methodology, not retired, non-zero tonnes, serial and proof hash. Wrapped NFTs are tracked in per-tonnes buckets (O(1) `unwrapAny`). CCT is not burnable by holders; `isFullyBacked()` is exposed |
+| Marketplace | First-depositor attack and sandwichable `addLiquidity` | Permanently locked `MINIMUM_LIQUIDITY`, proportional deposits, `carbonMin` / `stableMin` / `minLiquidity` parameters and `quoteAddLiquidity` |
+| Marketplace | Fees could never be withdrawn | `accruedFees` tracked separately; `FEE_MANAGER_ROLE` can call `withdrawFees` (never escrow or reserves) |
+| Marketplace | Auction end time had no upper bound | End time must be 1 hour to 30 days ahead |
+| Marketplace | Push payments let a blacklisted address freeze an auction | Failed transfers are credited to `pendingWithdrawals` and claimed with `claim()` |
+| Marketplace / app | Prices assumed an 18-decimal payment token and the web app used floats and hard-coded 18 decimals | Prices are payment-token base units per tonne, token decimals are read from the token, price bounds catch `1e18`-scaled mistakes, and the app does exact bigint math |
+| Marketplace | KYC was shallow | Maker KYC re-checked at fill; optional global gate for AMM and auctions; exits are never gated |
+| Registry | Email and phone were written in clear text on the public chain | Only `contactHash` is stored; KYB approval is bound to the reviewed profile hash and resets when the profile changes |
+| EmissionVerifier | Reduction inflated by `1e18`; the mint ran inside the oracle callback (out of gas on a real router); the same reduction could be minted repeatedly | 18-decimal units end to end; the callback only records the measurement and `claimCredits(requestId)` mints; one in-flight request per project, one success per period, one claim per request |
+| CarbonPriceOracle / RegistrySync | Every price was stored under methodology 0; callback gas too low; no price sanity bounds; "not found" counted as verified | Request-id to methodology mapping, bounded gas limit, price bounds, confidence and staleness limits; only serials found retired at the source count as verified |
+| Web app | A green "Retirement verified" certificate for free credits; copy that overstated verification; vulnerable dependencies; build errors ignored | Certificates are green only when the stored record matches and the credit is issuer-backed; copy was rewritten; dependencies were updated and `@x402/*` removed; strict build; Content-Security-Policy added |
+| Repository | Unused `EmergencyPausable` and `ReentrancyGuard` helper contracts suggested protections that did not exist | Removed |
+
+### Remaining limitations
+
+#### Trust and governance
+
+- **No professional audit.** See the callout above.
+- **Issuer trust is the trust anchor.** `mintCredit` accepts any non-zero `oracleProofHash` and any non-empty serial. The contracts never contact a registry, read evidence or call an oracle, so a dishonest or mistaken issuer can create credits that stand for nothing. Overlapping serial blocks are not detected (only identical strings are). Onboarding policy and recommended controls: [Become an issuer](/docs/guides/issuer).
+- **`RegistrySync` is advisory.** It can record whether a serial still circulates at a source registry; `CarbonCreditNFT` does not consult it.
+- **Single administrative account until handover.** See above. A production deployment should use a multisig (ideally with a timelock) and separate the roles. Nothing enforces the handover onchain.
+- **`ORACLE_ROLE` can rewrite proof data.** `updateVerification` replaces the proof hash and satellite CID of any existing credit (never to zero), so holders of that role must be as trusted as issuers.
+- **Pausing is broad.** While the NFT is paused, transfers and burns revert, so users cannot retire credits or unwrap CCT. If both `DEFAULT_ADMIN_ROLE` and `PAUSER_ROLE` are renounced while paused, nobody can unpause.
+- **Not upgradeable.** The contracts are plain constructors, not proxies.
+
+#### Oracles
+
+- **Mocks on testnet.** `MockFunctionsRouter` never invokes the client's callback, so no price, emission verification or registry check completes on testnet; `donId` / `subscriptionId` are not configured by the testnet script. There is no mock on mainnet: without a real router, do not rely on the oracle contracts, and check that Chainlink Functions is available on the target chain first.
+- **Operator-provided data.** No data source is hard-coded. Price sources, project endpoints and registry endpoints are URLs chosen by admins or project registrars and stored onchain, and the JavaScript is uploaded with `setSource` (anyone can compare `sourceHash()` with the reference file). The quality of every oracle answer rests on those endpoints, on the uploaded source and on trusting the DON. Because project registrars choose their own URLs, any DON-hosted API key must be restricted to one host.
+- **Confidence comes from the answer.** `EmissionVerifier` stores the confidence returned by the DON and requires at least 90 to claim; with the reference source that needs a cross-check URL. `targetReduction` is not compared with the result and the geography of oracle-minted credits is still a hard-coded string. See [EmissionVerifier](/docs/contracts/emission-verifier).
+- **Manual fallback is a trusted multisig.** `ORACLE_REPORTER_ROLE` can post prices (bounded in range, age, spacing and deviation) without Functions. `lastPriceManual` shows when the current price is manual. The price oracle is not consumed by any contract.
+- **Untested against a real router.** The proofs of concept and tests used a helper router, not Chainlink's.
+
+#### Marketplace and tokens
+
+- **Self-dealing across wallets.** A seller cannot bid on their own auction and an order's creator cannot fill their own order, but trading with a second wallet you control is not detectable. Auctions have no minimum bid increment or anti-sniping extension.
+- **KYC does not follow the token.** KYC is a per-address flag; it does not follow CCT once it is transferred.
+- **CCT fungibility.** Credits in a pool are fungible per tonne regardless of vintage or project; `unwrapAny(amount)` only matches an NFT with exactly that many tonnes.
+- **AMM not in the web app.** `addLiquidity`, `removeLiquidity` and `swap` exist in the contract but have no UI.
+- **`MATCHER_ROLE`** is declared on the marketplace but unused; `VERIFIER_ROLE` on the NFT and `WRAPPER_ROLE` on CCT are declared but gate nothing.
+- **Mock payment token on testnet.** `MockERC20` has an unrestricted public `mint` and `burn(from, amount)`. It exists only on testnet and local chains.
+
+#### Data and certificates
+
+- **Public data.** Company name, legal ID, country, emission figures and retirement reasons are public and permanent. Email and phone are not onchain (only `contactHash`). Registry profiles cannot be removed.
+- **Retirement certificates** prove a token was burned, not that the underlying project is real; the retirement reason is a self-declared, unverified statement.
+- **Optional off-chain backend.** The depository backend is not part of this repository's deployment and is not verifiable onchain; leave `NEXT_PUBLIC_BACKEND_URL` empty unless you operate one.
+
+#### Deployment
+
+- **Contract size.** `CarbonCreditNFT` is around the 24 KiB (EIP-170) limit with the default compiler settings. Local Hardhat networks disable the limit; confirm the limit of the target chain before deploying.
+- **Bytecode not compared.** The review did not confirm that any deployed bytecode equals this source.
+
+### ABI compatibility
+
+The web app calls the contracts through human-readable ABIs. A call or event subscription built from a signature that differs from the deployed contract reverts, returns no data, or never matches logs. The NFT, CCT, marketplace and registry have new ABIs after the fixes (see [Events & ABIs](/docs/contracts/events-and-abis)); redeploy and keep the app on the matching `NEXT_PUBLIC_*` addresses.
+
+See the [Roadmap and limitations](/docs/roadmap) page for planned work.
+
+## Staged decentralisation of the CARB stack
+
+<Callout type="warn" title="Not launched; legal notice">
+  CARB is not launched yet. This section describes the plan in the design document (`contracts/contracts/docs/TOKEN.md`), not a live state. It is not investment advice and not an offer or solicitation; CARB may be restricted in your jurisdiction; no return of any kind is promised; the contracts are unaudited. Get your own legal and financial advice.
+</Callout>
+
+Governance power is exactly the roles the timelock holds. It is **least-privilege by design**: the timelock gets `PARAMETER_ROLE` on the marketplace, staking and bond contracts and `SLASHER_ROLE` on the bond, and nothing else. The governor additionally only accepts proposals that target allowlisted contracts and carry no ETH.
+
+| Stage | State | Multisig | Governance |
+| --- | --- | --- | --- |
+| 0 Bootstrap | Token launched, staking and (optionally) bond deployed. The marketplace discount provider is set by the multisig. | Holds every role including `PARAMETER_ROLE` / `SLASHER_ROLE` | Governor and timelock may be deployed but hold nothing |
+| 1 Dual control | Voting live; delegation and turnout observed | Keeps all roles, can revoke the timelock's roles | Timelock also receives `PARAMETER_ROLE` / `SLASHER_ROLE`; parameter changes can pass by vote |
+| 2 Governed parameters | After a trial period without incident and with a sufficiently distributed, delegated supply | Renounces its own `PARAMETER_ROLE` / `SLASHER_ROLE`; keeps `DEFAULT_ADMIN_ROLE` everywhere (guardian), pause, KYC, fee withdrawal and `ISSUER_ADMIN_ROLE` | Controls the bounded parameters and slashing |
+| 3 Optional | Only with legal advice and community support | Moves further low-risk roles to the timelock | **Never** issuance (`ISSUER_*`), oracle writes, or anything that can touch user escrow |
+
+Emergency powers (`PAUSER_ROLE`) intentionally stay with a fast multisig at every stage; a governance delay of days is too slow for incident response. This is a deliberate centralisation.
+
+| Contract | Role | Multisig | Timelock (stage 1 or later) |
+| --- | --- | --- | --- |
+| `CarbonCreditNFT` | `DEFAULT_ADMIN_ROLE`, `ISSUER_ADMIN_ROLE`, `PAUSER_ROLE`, `ORACLE_ROLE`, `VERIFIER_ROLE` | yes | never (`ISSUER_ADMIN_ROLE` is also granted to `IssuerBond`) |
+| `CarbonMarketplace` | `DEFAULT_ADMIN_ROLE`, `PAUSER_ROLE`, `KYC_ROLE`, `FEE_MANAGER_ROLE` | yes | never |
+| `CarbonMarketplace` | `PARAMETER_ROLE` | at stages 0 and 1 | yes |
+| `CarbStaking` | `DEFAULT_ADMIN_ROLE` | yes | never |
+| `CarbStaking` | `PARAMETER_ROLE` | at stages 0 and 1 | yes |
+| `IssuerBond` | `DEFAULT_ADMIN_ROLE` (block list, role management) | yes | never |
+| `IssuerBond` | `PARAMETER_ROLE`, `SLASHER_ROLE` | at stages 0 and 1 | yes |
+
+`scripts/lib/governance-setup.js` encodes this table (`deployGovernance`, `governanceRolePlan`, `applyGovernanceSetup`, `handOverToGovernance`, `assertGovernanceBoundaries`). The deployment order is on the [overview](/docs/contracts/overview#carb-token-stack-deployment-order-not-launched-yet).
+
+## Known limitations: CARB token stack
+
+These are limitations of the design in `contracts/contracts/docs/TOKEN.md` (section 8). None of them is a promise about value or outcomes.
+
+- **Governance capture.** One token, one vote. If the owner, treasury or a few holders control most delegated supply, governance is theirs. Bounds (fee at most 1 %, discount at most 50 % of the fee) and the least-privilege timelock limit what a captured vote can do (no issuance, no escrow), but not that it can slash bonded issuers or change the KYC-gate and minimum-price parameters.
+- **Slashing is a powerful, centralised-by-design lever,** and an issuer's loss of a bond is real. It needs evidence, a documented appeals path and, at first, the multisig. The dispute flag only forces explicit slasher confirmation; it is not adjudication.
+- **Open bond path.** With `bondRequired = true` anyone willing to lock the bond can mint credits. A bond is a deterrent, not verification of credit quality. The path is meant to stay closed until off-chain verification and an appeals process exist.
+- **Quorum vs. non-voting supply.** Quorum is a fraction of total supply, including treasury, staked and bonded tokens that cannot vote. It can stall governance if it is not calibrated against the real distribution of **delegated** tokens.
+- **Staked and bonded tokens carry no votes.** Users who choose a tier or a bond give up that voting power. Voting needs `delegate(...)`.
+- **Discount follows the current tier, per address.** Splitting stake across addresses does not increase the discount; wash trading between own addresses only reduces fee revenue by the discount. Event volume is not a trustworthy metric.
+- **Provider gas bound.** The 60,000-gas `staticcall` follows the EIP-150 63/64 rule; a transaction sent with barely enough gas could run out of gas after a failed provider call. Use normal gas estimation.
+- **Timestamps.** Governance uses `block.timestamp`; on an L2 the sequencer sets it (bounded drift). Durations are days, so drift is immaterial, but a sequencer outage delays proposal progress.
+- **No upgradeability.** Bugs require migrating to new contracts; the token is immutable by design.
+- **Single-multisig key risk** until stage 2: a compromised multisig compromises the parameter set, the issuer allowlist and the pause. A hardware-secured multisig with several independent signers and an off-chain runbook are expected.
+- **Regulatory.** Whether CARB falls under securities, crypto-asset, commodity or payment rules depends on facts outside these contracts. The owner must obtain qualified legal advice in every jurisdiction before any launch. CARB must not be described as an investment, and no yield, profit, price support or buy-back may be implied.

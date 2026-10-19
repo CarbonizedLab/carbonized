@@ -1,0 +1,19 @@
+{
+  "title": "Smart Contracts",
+  "pages": [
+    "overview",
+    "carbon-credit-nft",
+    "carbon-credit-token",
+    "carbon-marketplace",
+    "carbon-price-oracle",
+    "carbon-registry",
+    "emission-verifier",
+    "registry-sync",
+    "carb-token",
+    "carb-staking",
+    "issuer-bond",
+    "carb-governor",
+    "roles-and-security",
+    "events-and-abis"
+  ]
+}

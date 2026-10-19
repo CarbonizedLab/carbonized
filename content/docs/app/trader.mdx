@@ -1,0 +1,57 @@
+---
+title: Trader
+description: Trader registration on the onchain registry (contact data kept off-chain as a hash) and the trader dashboard.
+---
+
+Two routes: `/app/trader/register` and `/app/trader/dashboard`. Profiles live in the [`CarbonRegistry`](/docs/contracts/carbon-registry). You do **not** need to register as a trader to use the marketplace, auctions or sell flow; those pages only need a wallet, payment token and CCT.
+
+## Registration — `/app/trader/register`
+
+| Field | Required | Limit |
+| --- | --- | --- |
+| Full Name / Trading Name | Yes | 1 to 100 characters |
+| Email (must contain `@`) | Yes | up to 120 characters; never onchain |
+| Phone | Yes | up to 32 characters; never onchain |
+| Country / Region | Yes | up to 64 characters |
+
+<Callout type="warn" title="What becomes public">
+  Your trader name and country are stored on a public blockchain permanently and cannot be deleted. Email and phone are **not** published: the browser computes `contactHash = keccak256(abi.encode(email, phone, salt))` and only the hash goes onchain; the details and the random salt stay in this browser's local storage.
+</Callout>
+
+On submit:
+
+1. The browser computes the contact hash with a fresh random salt.
+2. `CarbonRegistry.registerTrader(name, contactHash, country)`; the page waits for the receipt and shows the transaction hash. Reverts such as `Already registered` are shown as the error.
+3. Redirect to the dashboard after about 1.5 seconds.
+
+There is no starter pack and no free credits. One profile per wallet: a wallet already registered as a company or trader sees an explanatory empty state instead of the form. Without `NEXT_PUBLIC_CARBON_REGISTRY` the page shows "Registry not configured".
+
+## Dashboard — `/app/trader/dashboard`
+
+| Element | Source |
+| --- | --- |
+| Header name, **Active Trader** badge | `CarbonRegistry.getTraderData` |
+| **Portfolio Value** | Your NFT credit tonnes × the oracle price (`CarbonPriceOracle.getLatestPrice("VERRA_VCS")`), shown as an *indicative* value; `—` when the oracle has no price |
+| **Carbon Credits** | Sum of your non-retired NFT tonnes (onchain) |
+| **CCT Balance** | `balanceOf` of the configured CCT token |
+| **Member Since** | Registry registration date |
+| Account info | Country, wallet and the contact commitment (hash); no email or phone |
+| Asset Allocation chart | Real: your NFT credits grouped by methodology |
+| Portfolio tab | Your NFT credits with an estimated value at the oracle price |
+| Portfolio Growth, Carbon Price trend line, CCT Trading Graph and Trading Summary | **Demo** (illustrative static series, labelled *Demo*) |
+| Analytics tab | Placeholder ("coming soon") |
+
+Tabs: Overview, Portfolio, Trading, Analytics.
+
+### States
+
+| State | Behaviour |
+| --- | --- |
+| Wallet not connected | "Connect wallet to view dashboard" |
+| Registry not configured | "Registry not configured" |
+| Loading | Skeletons |
+| Not registered as a trader | "Trader account not found" with a **Register as Trader** button. No placeholder data is shown. |
+
+## Related
+
+[Marketplace](/docs/app/marketplace) · [Auctions](/docs/app/auctions) · [CarbonRegistry reference](/docs/contracts/carbon-registry)

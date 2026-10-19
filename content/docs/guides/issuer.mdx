@@ -1,0 +1,145 @@
+---
+title: Become an issuer
+description: Issuer onboarding policy for Carbonized - who can create credits, what evidence is required, the serial rules, the trust model and the recommended controls.
+---
+
+An **issuer** is an account that holds `ISSUER_ROLE` on `CarbonCreditNFT`. It is the only kind of account that can create credits (`mintCredit`, `batchMint`). There is no public mint, no faucet and no starter pack. This page is the onboarding policy for issuers and explains what the contracts do and do not check.
+
+<Callout type="warn" title="Credits are only as trustworthy as the issuer">
+  The contract checks formats and uniqueness: a non-empty registry serial that was never tokenized before, a non-zero evidence hash, 1 to 10,000,000 whole tonnes and a vintage year between 2015 and 2050. It does **not** contact a registry, read the evidence or call an oracle. Whether a credit stands for a real reduction depends on the issuer that created it. Carbonized does not claim that issued credits are approved by any registry or regulator, and no legal permit or regulatory approval is implied by holding `ISSUER_ROLE`.
+</Callout>
+
+## What an issuer can and cannot do
+
+| An issuer can | An issuer cannot |
+| --- | --- |
+| Create credits for any recipient address with `mintCredit` or `batchMint` (up to 100 per call by contract, 25 per transaction in the app) | Edit, burn or claw back a credit after it is minted |
+| See its address on the public issuer list | Mint the same serial twice, mint without a serial, or mint with a zero evidence hash |
+| Choose the methodology label (`ICM_COMPLIANCE`, `VERRA_VCS`, `GOLD_STANDARD`) | Pause contracts, move funds or change fees (those are other roles) |
+
+`ORACLE_ROLE` (a separate role, not held by issuers by default) can rewrite the proof hash and satellite CID of an existing credit with `updateVerification`; it cannot change the serial, tonnes or owner.
+
+## Onboarding policy
+
+The operator of a deployment decides who becomes an issuer. The recommended policy is:
+
+<Steps>
+<Step>
+
+### Apply
+
+Send the operator the application package: who you are (legal entity and the people behind the issuing wallet), which registries and projects you issue from, the expected volume and a **multisig address** (for example a Safe) that will hold the role. A personal wallet is not accepted for a mainnet deployment.
+
+</Step>
+<Step>
+
+### Prove control over the source credits
+
+For each registry you intend to issue from, show that you hold or control the underlying credits in that registry (account statement or export showing the serial, status, quantity and holder).
+
+</Step>
+<Step>
+
+### Dry run on testnet
+
+Issue a few credits on the test network with the same multisig set-up, using the [Issuer page](/docs/app/issuer): single and CSV batch.
+
+</Step>
+<Step>
+
+### Grant and publish
+
+An admin (`DEFAULT_ADMIN_ROLE`) grants `ISSUER_ROLE` to the multisig. The address then appears on the public issuer list on the Issuer page, which is rebuilt from onchain `RoleGranted` and `RoleRevoked` events and confirmed with `hasRole`.
+
+</Step>
+</Steps>
+
+An admin can revoke `ISSUER_ROLE` at any time. Revocation stops new issuance; it does not affect credits that already exist.
+
+## Two ways to become an issuer
+
+| | Trusted issuer (direct grant) | Bonded issuer (bond path) |
+| --- | --- | --- |
+| How | The multisig, which holds `ISSUER_ADMIN_ROLE` on `CarbonCreditNFT`, grants `ISSUER_ROLE` after the onboarding policy above | You lock CARB in `IssuerBond` with `bond(amount)`; the contract grants `ISSUER_ROLE` |
+| Bond | None | At least the minimum bond (default in the deployment helper: 10,000 CARB; the owner may change it before launch) |
+| Availability | Always, at the multisig's discretion | Only when the owner opens the path with `bondRequired`. It is closed until then. |
+
+Honest caveats:
+
+- **A bond is a deterrent, not verification.** Locking CARB does not prove that your credits are real. An open bond path lets anyone willing to lock the bond create credits, so the recommendation is to keep it closed until off-chain verification and an appeals process exist.
+- **Slashing is real loss.** A slash proposal opens a dispute window (default 7 days), during which you cannot unbond or withdraw. You may dispute with an evidence hash; a disputed proposal needs an explicit slasher decision. Slashed CARB is burned by default.
+- **Exit takes time.** `startUnbond` revokes the bond-granted role at once; withdrawal follows after the unbond delay (default 30 days).
+- **Bonded CARB carries no votes**, and the bond pays nothing.
+- **A direct grant can be revoked** by the multisig at any time, and an address revoked that way can be barred from the bond path.
+- CARB is not launched yet. See [Issuer bond](/docs/token/issuer-bond) and [Risks and legal](/docs/token/risks-and-legal). Not investment advice; not an offer.
+
+## Evidence an issuer must supply
+
+Every credit carries an `oracleProofHash` (bytes32). In this deployment it is the **SHA-256 of the evidence bundle** for that credit (or for the batch it belongs to). The Issuer page can compute it in your browser from a file; the file is never uploaded. Keep the bundle: the hash only proves what the bundle contained when you issued.
+
+The evidence bundle for a credit must contain at least:
+
+1. **Registry record** of the serial(s): registry name, serial number or block, status, quantity (tonnes), vintage and holding account, as exported from the source registry.
+2. **Project documentation**: project identifier, methodology and the validation and verification report that covers the vintage.
+3. **Lock or cancellation proof** from the source registry showing that the credit was taken out of circulation there (or is held in an account that will not be used) before it was tokenized. Without this, the same tonne could be sold twice, once in the source registry and once on Carbonized. The contracts cannot check this; it is the issuer's obligation.
+4. **Issuer attestation**: a signed statement from the issuer's legal entity that the information is true, with the date.
+5. Optional **satellite or monitoring data** (stored as an IPFS CID in `satelliteDataCID`).
+
+Publish the bundle (or a redacted version plus the hash) at a location referenced by the credit's metadata URL (`tokenURI`), so buyers can check it.
+
+## Serial rules (one credit, one serial)
+
+- A credit has exactly **one** serial string and a serial can be tokenized **once, ever**. `mintCredit` and `batchMint` revert with `Credit already tokenized` if the canonical form was used before, and the serial key is never cleared, not even after retirement.
+- The canonical form trims ASCII whitespace and upper-cases `a-z`. `vcs-123 ` and `VCS-123` are the same serial. The methodology label is not part of the key, so relabelling does not create a new credit.
+- Write the full serial with the registry prefix as the registry shows it (for example `VCS-...`). Different spellings of the same registry serial (with or without prefix, extra separators) are **different** strings to the contract.
+- Serial blocks: if you tokenize a block of credits as one NFT, the serial string must identify the whole block, and blocks must never overlap. The contract compares whole strings only; it cannot detect overlapping ranges, so preventing overlap is the issuer's job.
+- An empty or whitespace-only serial reverts with `Serial required`.
+- The Issuer page checks `isSerialTokenized` live while you type and checks every serial of a CSV before sending anything.
+
+## Credit fields
+
+| Field | Rule |
+| --- | --- |
+| Recipient | non-zero address that receives the NFT |
+| Project ID, project name | non-empty (project ID groups credits; one `batchMint` carries a single project ID) |
+| Methodology | `ICM_COMPLIANCE`, `VERRA_VCS` or `GOLD_STANDARD`. Only an exact match can be wrapped into that CCT pool |
+| CO2 tonnes | whole tonnes from 1 to 10,000,000 (stored with 18 decimals) |
+| Vintage year | 2015 to 2050 |
+| Geography | country code, for example `BR` |
+| Evidence hash | 32 bytes, not all zeros |
+| Satellite CID | optional |
+| Metadata URL | `ipfs://`, `https://` or `ar://` link to the credit's metadata |
+
+## After issuance: transfer, wrap, retire
+
+- The recipient owns a normal ERC-721. It can be transferred, retired (burned with a public retirement certificate) or wrapped into the pooled CCT of its methodology.
+- Wrapping succeeds only if the credit is not retired, has non-zero tonnes, a non-empty serial, a non-zero evidence hash and the methodology matches the pool exactly. The Tokenize page shows these reasons before any transaction is sent. See [Tokenize](/docs/app/tokenize).
+- A wrapped NFT is locked in the CCT contract and must be unwrapped before it can be retired.
+- Retirement is final and public: see [Retire credits](/docs/guides/retire-credits). A retired serial can never be issued again.
+
+## Batch issuance
+
+Use the CSV tab on the Issuer page for more than a few credits. Columns: `projectId, projectName, serialNumber, methodology, tonnes, vintageYear, geography, oracleProofHash, satelliteDataCID (optional), tokenURI`. The page validates every row, flags serials repeated in the file or already tokenized onchain, groups rows by project and sends transactions of **at most 25 credits** (one credit costs roughly 0.5M gas, and a transaction is limited to about 16.7M gas). Each transaction is signed separately, and progress is stored in the browser so a failed or interrupted run can be resumed with the same CSV. Nothing is skipped silently: all rows must be valid before the first transaction is sent.
+
+## Recommended controls
+
+| Control | Why |
+| --- | --- |
+| **Multisig issuers** (for example a Safe with at least 2 signers who are different people) | One stolen or mistaken key cannot mint credits |
+| **Four-eyes process**: one person prepares the CSV and evidence, another approves the transaction | Catches wrong serials and tonnes before they become permanent |
+| **Public issuer list** | Buyers can check who is allowed to create credits; the Issuer page rebuilds it from onchain events |
+| **Evidence hashes published with the bundle** | Anyone can recompute the SHA-256 and compare it to `oracleProofHash` |
+| **Reconciliation with the source registry** | Compare issued serials with the registry on a schedule; `RegistrySync` can record registry checks but the NFT does not enforce them |
+| **Monitoring** | Watch `CreditMinted` and `CreditBatchMinted` for unexpected volume or recipients |
+| **Revocation and pause plan** | Know who can revoke `ISSUER_ROLE` and who holds `PAUSER_ROLE` before an incident |
+| **Role handover** | The admin and pauser roles belong to a multisig, not to the deployer key; see [Roles and security](/docs/contracts/roles-and-security) |
+
+## What buyers should check
+
+Before buying or retiring a credit: who issued it (`verificationSource` and the public issuer list), the serial in the source registry, the evidence hash and bundle, and the vintage and methodology. A retirement certificate proves that a token was burned, not that the project is real.
+
+<Callout title="Status of this review">
+  The contracts and the web app went through an **internal automated review, not a professional audit**. The findings and what was fixed are summarised in [Roles and security](/docs/contracts/roles-and-security#known-limitations-and-security-notes).
+</Callout>
+
+[Issuer page](/docs/app/issuer) · [CarbonCreditNFT reference](/docs/contracts/carbon-credit-nft) · [Roles and security](/docs/contracts/roles-and-security)

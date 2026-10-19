@@ -1,0 +1,82 @@
+---
+title: Buy credits
+description: Get gas and payment token (test payment token on testnet), then buy CCT from a sell order or post a buy request.
+---
+
+Buying means paying **payment token** to `CarbonMarketplace`: real 6-decimal payment token on mainnet, a mock token on testnet. The app reads `decimals()` of the payment token from the chain and never assumes 18. payment token must be approved before the fill, and the app does that for you with the exact amount.
+
+## Prerequisites
+
+- A wallet connected on the target network (see [Wallet](/docs/wallet/reown-appkit) and [Networks](/docs/wallet/networks)). Wrong network shows a **Switch to …** button instead of your address.
+- Native gas token (ETH). On testnet use `https://faucet.testnet.chain.robinhood.com` (listed in [Networks](/docs/wallet/networks)); on mainnet there is no faucet, so fund the wallet with real ETH.
+- payment token. On mainnet this is real payment token. On testnet this is `MockERC20`, whose `mint` has no access control (testnet only).
+- All contract addresses configured, otherwise the amber **Contracts not configured** banner appears ([Environment variables](/docs/deployment/environment-variables)).
+
+## Get test payment token
+
+Testnet only: the deploy script mints test payment token only to the first 10 deployer signer accounts, and any other testnet wallet mints for itself. There is no mock and no faucet on mainnet.
+
+```bash
+cast send <NEXT_PUBLIC_payment token_ADDRESS> "mint(address,uint256)" <your-wallet> 1000000000000000000000 \
+  --rpc-url https://rpc.testnet.chain.robinhood.com/rpc --private-key <key>
+```
+
+The amount is in the mock token's base units: with the 18 decimals used by the current script, `1000e18` = 1,000 payment token (with a 6-decimal mock it would be `1000e6`). Check `decimals()` on the mock first. Alternatively call `mint` from the block explorer's write tab.
+
+## Buy from a sell order
+
+<Steps>
+<Step>
+
+### Open the marketplace
+
+Go to `/app/marketplace` and connect. Check the balance bar shows payment token.
+
+</Step>
+<Step>
+
+### Pick a sell order
+
+On **For Sale**, search by seller address or sort by price, quantity or newest. Click **Buy** on a card.
+
+</Step>
+<Step>
+
+### Enter the amount
+
+Type tonnes (up to the available amount; partial fills are allowed). The modal shows **Total Cost** and warns "Insufficient payment token balance" if you are short.
+
+</Step>
+<Step>
+
+### Approve payment token, then fill
+
+Click **Buy Credits**. The app re-reads your payment token allowance for the marketplace; if it is below the cost (`amount × price / 1e18`, rounded up, in payment token base units), your wallet first asks for `approve` of that exact amount. After that confirmation, a second prompt sends `fillOrder(orderId, amount)`. Both receipts are awaited. **Max** fills the exact remaining amount.
+
+</Step>
+<Step>
+
+### Confirm
+
+You receive `amount` CCT. Check the CCT chip in the balance bar, or open [Carbon Wallet](/docs/app/carbon-wallet).
+
+</Step>
+</Steps>
+
+## Post a buy request instead
+
+Use `/app/credit-requests` → **Submit Request** when no listing fits. Enter tonnes and a maximum price per tonne; the app approves the exact payment token cost if needed, then calls `createBuyOrder`, which **locks that payment token** until the order is filled or cancelled. The request appears for sellers on the marketplace.
+
+<Callout type="info">
+  To get escrowed payment token back from an open buy request, open **Marketplace → My orders** and use **Cancel order**
+  (`cancelOrder(orderId)`). If a refund or proceeds ever cannot be sent to your wallet, a **Claim** banner appears on the marketplace.
+</Callout>
+
+## If it fails
+
+| Symptom | Likely cause |
+| --- | --- |
+| `Order expired`, `Order not active` | Someone filled or cancelled it first; refresh. |
+| `KYC required` / `Maker KYC revoked` | Order was created with the KYC flag (never by the web app) and you or the maker are not (or no longer) verified. |
+| Order list empty although orders exist | Orders older than the last 20,000 blocks are not read. |
+| Approval or fill never prompts | Wrong network or contracts not configured; see [Troubleshooting](/docs/troubleshooting). |

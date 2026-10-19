@@ -1,0 +1,10 @@
+{
+  "$schema": "..\\..\\..\\.source\\json-schema\\docs.meta.json",
+  "title": "Deployment",
+  "pages": [
+    "robinhood-mainnet",
+    "robinhood-testnet",
+    "local-hardhat",
+    "environment-variables"
+  ]
+}

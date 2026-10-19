@@ -1,0 +1,58 @@
+---
+title: Auctions
+description: Bid on CCT auctions, track bid history, finalize or cancel auctions.
+---
+
+Route: `/app/auctions`. English auctions for CCT: the seller escrows CCT, bidders escrow payment token, the highest bid wins when the timer ends.
+
+## What it shows
+
+Each auction is a card: `CCT Auction #id`, seller, quantity (tonnes), **starting price** (a *total* payment token amount, not per tonne; onchain `startPrice` and `bidAmount` are totals in payment-token base units, converted with the token's `decimals()` read from the chain), current highest bid and bidder, a live countdown (ticks every second), and a role badge for your address. An auction's end time is an absolute timestamp that the contract requires to be between 1 hour and 30 days after creation.
+
+| Role badge | Meaning |
+| --- | --- |
+| Seller | `seller == you` |
+| Highest Bidder | `highestBidder == you` |
+| Outbid | You appear in the `BidPlaced` history but are not the highest bidder |
+
+Controls: search (auction ID or seller address), filters **All / Active / Ending Soon (under 24 h) / My Bids / My Auctions**, **Refresh**, and **Create Auction**, which links to [Sell Credits](/docs/app/sell-credits).
+
+## Actions
+
+| Action | Who | Approval | Contract call | Notes |
+| --- | --- | --- | --- | --- |
+| **Place Bid** / Bid Higher / Increase Bid | Anyone except the seller | payment token `approve(marketplace, bid)` for the exact bid if the freshly read allowance is lower | `placeBid(auctionId, bidAmount)` | The dialog asks for your **total** bid in payment token. The previous highest bidder is refunded automatically; if the payment token refuses that refund, it is credited to their `pendingWithdrawals` and they use **Claim** (see [Marketplace](/docs/app/marketplace)). |
+| **Finalize & Claim CCT** (winner) / **Accept & Finalize** (seller) | Buttons shown to the winner and the seller once the timer ends | none | `finalizeAuction(auctionId)` | Contract allows anyone to call it. Winner gets the CCT; seller gets the highest bid minus the fee (0.25 % default, snapshotted when the auction was created). If the seller cannot receive payment token the proceeds become claimable via `claim()`. With no bids the CCT returns to the seller. |
+| **Cancel Auction** | Seller, only while there are no bids | none | `cancelAuction(auctionId)` | CCT returned to the seller. |
+
+Client-side checks before sending: the bid must exceed the current bid and be at least the starting price. The seller never sees a bid action on their own auction, and the contract rejects it with `Seller cannot bid` (shown as "You cannot bid on your own auction").
+
+## Contract reverts
+
+| Message | Cause |
+| --- | --- |
+| `Auction not active` | Already finalized or cancelled |
+| `Auction ended` | `placeBid` after `endTime` |
+| `Bid below start price` / `Bid too low` | Bid under the start price or not above the highest bid |
+| `Seller cannot bid` | The auction's seller tried to bid on it |
+| `Price below minimum` / `Price above maximum` | `createAuction` with a starting bid per tonne outside the marketplace bounds |
+| `Duration too short` / `Duration too long` | `createAuction` with an end time outside 1 hour to 30 days from now |
+| `Auction not ended` | `finalizeAuction` before `endTime` |
+| `Not auction creator` / `Auction has bids` | `cancelAuction` by a non-seller, or after a bid |
+
+## Data sources
+
+Onchain only. The list comes from `AuctionCreated` events in the last **20,000 blocks** plus `getAuction`, filtered to `isActive`. An auction whose timer has expired stays listed (as ended) until someone calls `finalizeAuction`. Bid history is read from `BidPlaced` logs in the same window, loaded for every listed auction so the app can detect *Outbid*. No backend call.
+
+## States
+
+| State | Behaviour |
+| --- | --- |
+| Wallet not connected | "Wallet not connected" empty state. |
+| Loading | Two skeleton cards. |
+| No results | "No auctions found" with a hint tailored to the active filter. |
+| Contracts not configured | Banner in the shell; the list stays empty. |
+
+## Related
+
+[Run an auction](/docs/guides/run-an-auction) · [CarbonMarketplace reference](/docs/contracts/carbon-marketplace)

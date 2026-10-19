@@ -1,0 +1,60 @@
+---
+title: Glossary
+description: Terms used across Carbonized's contracts, app and docs.
+---
+
+| Term | Meaning in Carbonized |
+| --- | --- |
+| **Carbon credit** | A claim of one tonne of CO₂e avoided or removed, as recorded by an authorized issuer. Represented onchain by a `CarbonCreditNFT` token. Carbonized does not independently verify the underlying project. |
+| **Authorized issuer** | An account (or multisig) holding `ISSUER_ROLE` on `CarbonCreditNFT`; the only party that can create credits (`mintCredit` / `batchMint`). `EmissionVerifier` can be one. The role is granted by the multisig (trusted issuers) or, when the bond path is open, by `IssuerBond` against a CARB bond. |
+| **tCO₂e / tonne** | Unit of a credit. Onchain amounts use 18 decimals: `1e18` = 1 tonne. |
+| **CarbonCreditNFT** | ERC-721 contract that stores metadata for and retires credits created by issuers. |
+| **CCT** | *Carbon Credit Token*: the ERC-20 minted by `CarbonCreditToken` when you wrap an NFT. 18 decimals. One CCT contract exists per methodology pool (`VERRA_VCS`, `GOLD_STANDARD`, `ICM_COMPLIANCE` in the Robinhood deployment). |
+| **Wrap / unwrap** | Wrap: lock an NFT in the CCT contract and mint CCT equal to its tonnes (`wrapCredit`). Unwrap: burn that CCT to get the NFT back (`unwrapCredit`, `unwrapAny`). |
+| **Retire** | Permanently remove a credit from circulation. Onchain: `retireCredit` / `batchRetire` burn the NFT and store a certificate. The optional backend depository has its own off-chain status that is separate from this. |
+| **Retirement certificate** | The `RetirementCertificate` struct (token ID, retiree, date, reason, tonnes) saved onchain per retired NFT. It proves a token was burned, not that the underlying project is real. The reason is a self-declared, unverified statement. |
+| **`ICM_COMPLIANCE`** | Onchain identifier for national-registry compliance credits (for example credits under a national carbon-market registry such as China's CCER scheme). It is a code identifier, not a country. |
+| **Methodology** | The standard a credit follows, for example `VERRA_VCS` or `GOLD_STANDARD`. A CCT pool only accepts NFTs of its own methodology. |
+| **Vintage** | The year the emission reduction took place. `mintCredit` accepts 2015–2050. |
+| **Serial number** | Registry identifier of a credit; mandatory. The contract rejects a duplicate canonical serial (`Credit already tokenized`). |
+| **Oracle proof hash** | `bytes32` attestation stored with each credit; must be non-zero. The NFT does not verify it against any oracle. |
+| **Order book** | Buy and sell orders in `CarbonMarketplace`. Sell orders escrow CCT, buy orders escrow payment token. |
+| **Fill** | Taking some or all of an open order via `fillOrder`. Partial fills are allowed. |
+| **Credit request** | App wording for a **buy order**. |
+| **Auction** | Timed sale of CCT to the highest total payment token bid. The end time must be 1 hour to 30 days ahead. Settled by `finalizeAuction`. |
+| **Price per tonne** | In the contract, payment-token base units per tonne (6-decimal payment token: `$15` = `15000000`). Cost = `amount * price / 1e18`. |
+| **Trading fee** | `tradingFeePercent`, default 25 basis points (0.25 %), max 100 (1 %). Denominator `10000`. The rate is snapshotted per order or auction; order-book and auction fees are withdrawn by `FEE_MANAGER_ROLE` with `withdrawFees`. |
+| **Pending withdrawal / `claim()`** | If the payment token refuses a refund or proceeds transfer (for example a payment token blacklist), the amount is credited to `pendingWithdrawals` and the user calls `claim()`. The app shows a Claim banner. |
+| **AMM** | Constant-product pool inside the marketplace (`addLiquidity`, `swap`, `removeLiquidity`). No page in the web app uses it. |
+| **KYC role / `requiresKYC`** | `KYC_ROLE` holders mark wallets verified with `setKYCStatus`; orders flagged `requiresKYC` accept only verified takers (and a still-verified maker). The admin can switch on a global KYC gate for AMM and auctions. |
+| **KYB (reviewed)** | A company profile that a `VERIFIER_ROLE` account approved on `CarbonRegistry` for exactly the reviewed profile hash. Any later change to the profile resets it. |
+| **Contact hash** | `keccak256(abi.encode(email, phone, salt))`: the only contact data stored onchain. Email, phone and salt stay in your browser. |
+| **payment token** | The payment token. On mainnet it is real payment token with 6 decimals; the app reads `decimals()` and never assumes 18. On testnet it is a `MockERC20` with an open `mint` and no value. |
+| **Approval / allowance** | ERC-20 `approve` permission for the marketplace to pull a token. The app requests an exact amount and re-reads the allowance before each transaction. |
+| **`setApprovalForAll`** | ERC-721 permission. Used to let `CarbonCreditToken` take your NFT when wrapping. |
+| **CarbonPriceOracle** | Contract holding per-methodology carbon prices from operator-provided sources through Chainlink Functions (with an Automation-compatible upkeep) and a multisig manual-report fallback. Read with `getLatestPrice(string methodology)`. Mocked on testnet; the app shows prices only as indicative values. |
+| **EmissionVerifier** | Contract for projects and verification requests (roles `PROJECT_REGISTRAR_ROLE`, `VERIFIER_ROLE`, `AUTOMATION_ROLE`); the DON answer carries the measurement and a confidence, and `claimCredits` mints credits for a recorded reduction at confidence 90 or more. |
+| **RegistrySync** | Contract that checks external registry serials via Chainlink Functions against endpoints the admin configures. Advisory: the NFT does not call it. |
+| **Functions source** | The JavaScript a DON executes for an oracle contract. It is uploaded with `setSource`, and `sourceHash()` lets anyone compare it with the reference file. No data source is hard-coded. |
+| **MockFunctionsRouter** | Test contract standing in for the Chainlink Functions router on testnet. Not deployed on mainnet. |
+| **Scope 1 / 2 / 3** | GHG Protocol categories: direct emissions; purchased energy; other indirect emissions. Entered as numbers at company registration and stored publicly onchain. |
+| **Depository** | Optional backend ledger of credits per owner (`/depository/...`), shown in Carbon Wallet when `NEXT_PUBLIC_BACKEND_URL` is set. Separate from onchain state. |
+| **Carbon Wallet** | App page combining onchain balances, NFTs, orders and retirement, plus the optional depository tab. It has no password: access is your connected wallet. |
+| **Carbon Account number** | `CBZ-ACC-` plus the first 12 hex characters of your address, derived in the app. |
+| **Reown AppKit** | WalletConnect's wallet-connection library used for the Connect Wallet modal. See [Reown AppKit](/docs/wallet/reown-appkit). |
+| **Robinhood Chain** | Arbitrum Orbit L2 with gas in ETH. Mainnet chain ID `4663`, testnet chain ID `46630`. See [Networks](/docs/wallet/networks). |
+| **CARB** | Utility and governance token of Carbonized (`CarbToken`): fixed supply minted once, 18 decimals, timestamp-clock voting. Used for staking tiers, the issuer bond and voting on bounded parameters. It pays no rewards, revenue share or yield, and is not an investment or a claim on any asset. Not launched yet; may be restricted in your jurisdiction. |
+| **Tier** | Access level 0 to 3 from the matured CARB you stake in `CarbStaking`. The marketplace reads it as a discount on the trading **fee** (never the price), capped at 50 % of the fee, on the CCT seller side of order-book and auction sales; AMM swaps are not discounted. |
+| **Warm-up** | Time (`WARMUP`) newly staked CARB must age before it counts for a tier. It prevents borrowing tokens to gain a tier within one transaction. |
+| **Cooldown** | Time (`COOLDOWN`) between `unstake` and `withdraw`. The tier drops immediately on unstaking; tokens in cooldown count for nothing. |
+| **Bond** | CARB locked in `IssuerBond` to use the bonded-issuer path to `ISSUER_ROLE`. It is slashable, released only after an unbonding delay and never pays anything. A bond is a deterrent, not a verification of credit quality. |
+| **Slash** | Seizure of part of an issuer's bond (burned by default) through a proposal by a `SLASHER_ROLE` holder, a dispute window in which the issuer can dispute, and an execution step. |
+| **Governor** | `CarbGovernor`: the contract where CARB holders propose and vote (for / against / abstain) on bounded protocol parameters. It can only call allowlisted contracts and carries no ETH. |
+| **Timelock** | `CarbTimelock`: executes passed proposals after a bounded delay (1 to 30 days). It holds only the parameter and slasher roles, never issuance or escrow roles. |
+| **Delegation** | `delegate(...)` on CARB, required before tokens carry votes (self-delegation is enough). Staked and bonded CARB carry no votes. |
+| **`ISSUER_ADMIN_ROLE`** | Role on `CarbonCreditNFT` that administers `ISSUER_ROLE`: held by the multisig (trusted issuers) and by `IssuerBond` (bonded issuers). |
+| **`ORACLE_REPORTER_ROLE`** | Role on `CarbonPriceOracle` that may post a price manually with `reportPrice` when Chainlink Functions is unavailable. The app labels such a price "Manual report". |
+
+<Callout type="warn" title="Legal notice">
+  The CARB, tier, bond and governance entries are technical definitions of unaudited contracts. They are not investment advice and not an offer or solicitation, CARB may be restricted in your jurisdiction, and no return of any kind is promised. Get your own advice.
+</Callout>

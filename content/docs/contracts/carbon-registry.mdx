@@ -1,0 +1,124 @@
+---
+title: CarbonRegistry
+description: Onchain company and trader profiles, reported emissions and KYB verification bound to the reviewed profile. Stores only a contact hash, never raw email or phone.
+---
+
+**Inherits:** `AccessControl`, `Pausable` (OpenZeppelin 4.x)
+**Tests:** `test/unit/CarbonRegistry.test.js`
+
+The registry is the **source of truth** for who is a company or a trader on Carbonized. The web app reads and writes it directly; the optional backend only mirrors data.
+
+<Callout type="warn" title="Redeploy required, breaking ABI change">
+  This is the audit-fix registry. It replaces the first registry, which stored raw email and phone and had a starter-credit faucet. The old deployment cannot be migrated. The contract does not mint or hold anything and has no dependency on the NFT or on `ISSUER_ROLE`.
+</Callout>
+
+## What is public and what is not
+
+| Data | Where | Visibility |
+| --- | --- | --- |
+| Name, legal ID, country, emission totals, target, verified flag | contract storage and events | **Public and permanent** (anyone can read it, and events cannot be erased) |
+| Email, phone | **not onchain** | Kept by the company's browser (local storage) with a random 32-byte salt |
+| `contactHash = keccak256(abi.encode(email, phone, salt))` | contract storage | Public, but not reversible without the salt. Must be non-zero. |
+
+Anything you put into name or legal ID, and the retirement reason on the NFT, stays public permanently. Do not register personal data in those fields.
+
+## Design rules
+
+- **One profile per wallet.** A wallet is a company or a trader, never both and never twice (`Already registered`).
+- **Input caps.** Name at most 100, legal ID at most 64, country at most 64 bytes; required. Each emission figure at most 1 trillion tonnes (`MAX_EMISSION`).
+- **Emissions are 18-decimal tonnes**, like `co2Tonnes` on the NFT (`500e18` = 500 t CO2e).
+- **KYB is bound to the reviewed profile.** `setCompanyVerified(company, true, expectedProfileHash)` only succeeds if the onchain profile still hashes to `expectedProfileHash` (`profileHashOf(company)`), so the company cannot swap data between review and approval (`Profile changed`).
+- **Any change resets KYB.** A change of name, legal ID, `contactHash` or any of scope 1/2/3 automatically sets `verified` to `false` (event `CompanyVerified(company, false, msg.sender)`). `setEmissionTarget` does not reset it. The UI tells companies that editing resets KYB.
+- **One verified wallet per legal ID.** A legal ID can be verified for at most one wallet at a time (`Legal ID already verified`). Comparison is case- and format-insensitive: spaces, `-`, `.`, `/`, `_` are dropped and `a-z` upper-cased. Plain registration is permissionless and therefore not unique; uniqueness is enforced at verification.
+- **Pausable.** State-changing user functions revert with `Pausable: paused` while paused. Views keep working.
+- **No faucet.** There is no starter-credit function, no `registerAndClaimCredits` and no `creditNft`.
+
+## Constructor
+
+```solidity
+constructor(address admin)
+```
+
+`admin` must be non-zero (`Invalid admin`). It receives `DEFAULT_ADMIN_ROLE`, `PAUSER_ROLE` and `VERIFIER_ROLE`. The registry is deployed standalone: do **not** grant it `ISSUER_ROLE`. For a mainnet deployment pass a multisig as `admin`, or grant the roles to a multisig and renounce the deployer's.
+
+## Roles
+
+| Role | Gates |
+| --- | --- |
+| `DEFAULT_ADMIN_ROLE` | Role management |
+| `VERIFIER_ROLE` | `setCompanyVerified` (KYB) |
+| `PAUSER_ROLE` | `pause`, `unpause` |
+
+## Write functions
+
+| Function | Who | Notes |
+| --- | --- | --- |
+| `registerCompany(name, legalId, scope1, scope2, scope3, contactHash)` | Any unregistered wallet | Emits `CompanyRegistered`. |
+| `updateCompanyProfile(name, legalId, contactHash)` | The company | If name, legal ID or `contactHash` changed and the company was verified, `verified` is reset (emits `CompanyVerified(..., false, ...)`); then `CompanyProfileUpdated(company, name, legalId, verificationReset)`. |
+| `updateEmissions(scope1, scope2, scope3)` | The company only | Stores the new totals and emits `EmissionsUpdated`. The event log is the emissions history. Changing a total resets `verified`. |
+| `setEmissionTarget(target)` | The company only | Annual reduction target in tonnes (18 decimals); emits `EmissionTargetSet`. Does not reset KYB. |
+| `setCompanyVerified(company, verified, expectedProfileHash)` | `VERIFIER_ROLE` | When `verified == true`, `expectedProfileHash` must equal `profileHashOf(company)`. When `false` the hash is ignored (pass `bytes32(0)`). Emits `CompanyVerified`. Reverts `Not a company` for unknown addresses. |
+| `registerTrader(name, contactHash, country)` | Any unregistered wallet | Emits `TraderRegistered`. |
+| `pause()` / `unpause()` | `PAUSER_ROLE` | |
+
+## Computing the contact hash
+
+The hash is computed in the browser (or a backend) from the contact details and a random salt that the company keeps:
+
+```ts
+// viem
+keccak256(encodeAbiParameters(
+  [{ type: 'string' }, { type: 'string' }, { type: 'bytes32' }],
+  [email, phone, salt],
+))
+```
+
+The web app stores email, phone and salt in the browser's local storage. If that storage is cleared, the company can no longer prove the hash preimage and must register a new contact hash through `updateCompanyProfile` (which resets KYB).
+
+## View functions
+
+| Function | Returns |
+| --- | --- |
+| `getCompanyData(address)` | `name, legalId, contactHash, scope1, scope2, scope3, target, verified, registeredAt, updatedAt` (`registeredAt == 0` means not a company) |
+| `getCompanyEmissions(address)` | `scope1, scope2, scope3, target` |
+| `getCompanyKyb(address)` | `verified, registeredAt` |
+| `profileHashOf(address company)` | `bytes32`: the hash of the profile that a KYB approval covers (name, legal ID, `contactHash`, scope 1/2/3) |
+| `getTraderData(address)` | `name, contactHash, country, registrationDate, isActive` (`registrationDate == 0` means not a trader) |
+| `registrationTypeOf(address)` | `0` none, `1` company, `2` trader |
+| `isCompany(address)`, `isTrader(address)` | `bool` |
+| `verifiedOwnerOfLegalId(string legalId)` | wallet currently holding KYB for that (normalised) legal ID, or `address(0)` |
+| `verifiedLegalIdOwner(bytes32)` | same, by normalised hash |
+| `totalCompanies()`, `totalTraders()` | counters |
+| `MAX_NAME_LENGTH`, `MAX_LEGAL_ID_LENGTH`, `MAX_COUNTRY_LENGTH`, `MAX_EMISSION` | limits |
+
+## Events
+
+| Event | Parameters |
+| --- | --- |
+| `CompanyRegistered` | `address indexed company, string name, string legalId, uint256 scope1, uint256 scope2, uint256 scope3` |
+| `CompanyProfileUpdated` | `address indexed company, string name, string legalId, bool verificationReset` |
+| `EmissionsUpdated` | `address indexed company, uint256 scope1, uint256 scope2, uint256 scope3, uint256 total, uint256 timestamp` |
+| `EmissionTargetSet` | `address indexed company, uint256 target` |
+| `TraderRegistered` | `address indexed trader, string name, string country` |
+| `CompanyVerified` | `address indexed company, bool verified, address indexed verifier` |
+
+Removed events: `StarterCreditsClaimed`. Removed functions: `registerAndClaimCredits`, `starterCreditsClaimed`, `STARTER_CREDITS`, `creditNft`, and the raw `email` / `phone` fields.
+
+## Deploying
+
+The registry can be deployed on its own: `CarbonRegistry(admin)`. Set `NEXT_PUBLIC_CARBON_REGISTRY` to its address and `NEXT_PUBLIC_DEPLOY_BLOCK` to a block at or before the first deployment, so event scans (emissions history, activity feeds) start from a safe lower bound. See [Robinhood Chain Mainnet](/docs/deployment/robinhood-mainnet) and [Robinhood Chain Testnet](/docs/deployment/robinhood-testnet).
+
+## Web app usage
+
+| App function | Registry call |
+| --- | --- |
+| `registerCompany`, `updateCompanyProfile`, `updateEmissions`, `setEmissionTarget` | company writes (tonnes are converted to 18-decimal wei; email/phone/salt become a `contactHash`) |
+| `registerTrader` | trader write |
+| `setCompanyVerified` | KYB write with the profile hash read from `profileHashOf` (needs `VERIFIER_ROLE`) |
+| `getCompanyData`, `getCompanyEmissions`, `getCompanyKyb`, `getTraderData` | reads; `null` when the address is not registered or the registry is unreachable |
+
+Writes simulate first, wait for the receipt, and throw an `Error` with the contract's revert reason (for example `Already registered`) so pages can show it directly.
+
+## Related
+
+[Company page](/docs/app/company) · [Trader page](/docs/app/trader) · [Register a company](/docs/guides/register-company) · [Roles & Security](/docs/contracts/roles-and-security)

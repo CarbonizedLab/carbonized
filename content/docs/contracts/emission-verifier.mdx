@@ -1,0 +1,207 @@
+---
+title: EmissionVerifier
+description: Project registry plus Chainlink Functions / Automation measurement recording from operator-provided endpoints; credits are minted by a separate claimCredits call.
+---
+
+**Inherits:** `FunctionsConsumer` (itself `FunctionsClient` + `AccessControl`), `AutomationCompatibleInterface`, `ReentrancyGuard`
+
+Registers emission-reduction projects, periodically requests emission data through Chainlink Functions and **records** the measurement. A recorded reduction is turned into a `CarbonCreditNFT` by `claimCredits(requestId)`, which anyone may call; the NFT is always minted to the project owner.
+
+<Callout type="warn" title="Mocked on testnet, simplified in places">
+On the testnet deployment the router is `MockFunctionsRouter`, which never calls back, so no verification completes and nothing is minted by this contract there. A live setup needs a real Functions router, DON id, funded subscription, `setFunctionsConfig`, an uploaded source (`setSource`), `AUTOMATION_ROLE` for the upkeep, and per project an endpoint chosen by the registrar. **No data source is hard-coded**; the contract assumes no provider. Check that Chainlink Functions is available on the target chain first; if it is not, credits are issued only through the NFT's `ISSUER_ROLE` path. Some fields are still placeholders in the source: the token URI is `ipfs://Qm<projectId>`, the geography is the hard-coded string `"India"`, the satellite data CID is empty and `dataProofHash` is `keccak256(response)`. A credit minted here is "issued by an authorized issuer" (this contract holding `ISSUER_ROLE`), not independently audited.
+</Callout>
+
+## Constructor
+
+```solidity
+constructor(address functionsRouter_, address nftContract_)
+```
+
+`functionsRouter_` must be non-zero (`Invalid router`) and `nftContract_` must be non-zero (`Invalid NFT contract`); it is stored as immutable `nftContract`. The deployer gets `DEFAULT_ADMIN_ROLE`, `PROJECT_REGISTRAR_ROLE`, `VERIFIER_ROLE`. `AUTOMATION_ROLE` is not granted by the constructor.
+
+For `claimCredits` to mint, the verifier needs `ISSUER_ROLE` on the NFT (granted by a holder of the NFT's `ISSUER_ADMIN_ROLE`). All roles are OpenZeppelin `AccessControl` roles and can be granted to a multisig.
+
+## Roles
+
+| Role | Functions |
+| --- | --- |
+| `PROJECT_REGISTRAR_ROLE` | `registerProject` |
+| `VERIFIER_ROLE` | `deactivateProject`, `requestVerification` |
+| `AUTOMATION_ROLE` | `performUpkeep` |
+| `DEFAULT_ADMIN_ROLE` | `setFunctionsConfig`, `setSource`, `setDONHostedSecrets`, `setCrossCheckTolerance`, `grantAutomationRole` |
+
+## Functions base
+
+`setFunctionsConfig`, `source()`, `sourceHash()`, `setSource` and `setDONHostedSecrets` come from the shared `FunctionsConsumer` base and behave exactly as described on the [CarbonPriceOracle page](/docs/contracts/carbon-price-oracle#functions-base-functionsconsumer). Requests revert `Source not set` or `Functions not configured` until they are set. The operator guide is `contracts/scripts/functions/README.md`.
+
+## Units
+
+All emission figures (`baselineEmissions`, `measuredEmissions`, `reductionAchieved`) and the minted `co2Tonnes` are tonnes of CO2e with **18 decimals** (`1000e18` = 1000 tonnes), exactly like `CarbonCreditNFT.co2Tonnes`. There is no extra `* 1e18` on mint. `baselineEmissions` is the baseline for **one verification period**, on the same time basis as the measurement window.
+
+## Data structures
+
+```solidity
+struct Project {
+    string  projectId;
+    address owner;
+    string  methodology;
+    uint256 baselineEmissions;     // per verification period, 18-decimal tonnes
+    uint256 targetReduction;       // percent, 1..100
+    uint256 lastVerificationTime;
+    uint256 verificationInterval;  // seconds, 0 = default 30 days
+    bool    isActive;
+    string  iotEndpoint;           // primary measurement URL template (https)
+    string  satelliteRegion;       // legacy name: optional cross-check URL template, "" = none
+    bytes32 auditorSignature;
+}
+
+struct VerificationRequest {
+    bytes32 requestId; string projectId; uint256 requestTime; bool fulfilled;
+    uint256 measuredEmissions; uint256 reductionAchieved;
+    bytes32 dataProofHash; uint8 confidenceScore;
+    uint256 period;   // verification period index
+    bool failed;      // oracle error / malformed / zero measurement / invalid confidence
+    bool claimed;     // credits already minted
+}
+```
+
+State: `projects`, `verificationRequests`, `projectRequests[projectId]`, `projectCreditsMinted[projectId]`, `pendingRequestId`, `lastRequestTime`, `projectStartTime`, `periodVerified`, `activeProjects`, `isProjectIndexed`, `crossCheckToleranceBps` (default `1500` = 15 %), immutable `nftContract`.
+
+Limits: `MAX_BASELINE` 10,000,000e18, `MIN_VERIFICATION_INTERVAL` 1 day, `MAX_VERIFICATION_INTERVAL` 365 days, `DEFAULT_VERIFICATION_INTERVAL` 30 days, `PENDING_REQUEST_TIMEOUT` 6 hours, `MIN_RETRY_DELAY` 1 hour, `MIN_CLAIM_CONFIDENCE` 90, `MAX_PROJECT_ID_LENGTH` 64.
+
+## Over-issuance guards
+
+- At most one in-flight request per project (`pendingRequestId`); the callback accepts only that request id (`Request superseded` / `Unknown request` otherwise).
+- A new request is possible only once `verificationInterval` has elapsed since the last successful verification, and not within `MIN_RETRY_DELAY` (1 hour) of the previous request. A pending request times out after `PENDING_REQUEST_TIMEOUT` (6 hours).
+- Each `(project, period)` can be verified once (`periodVerified`); each verified request can be claimed once (`claimed`).
+- The NFT serial is deterministic per `(project, period)`: `<methodology>-<projectId>-P<period>`, so the NFT's own serial check is a second barrier.
+- A project id can **never** be re-registered, even after deactivation.
+- The measurement must be non-zero, and a credit can only be claimed at confidence at least `MIN_CLAIM_CONFIDENCE` (90).
+
+## Functions
+
+### `registerProject(projectId, owner, methodology, baselineEmissions, targetReduction, verificationInterval, iotEndpoint, satelliteRegion, auditorSignature)`
+
+`onlyRole(PROJECT_REGISTRAR_ROLE)`.
+
+| Message | Condition |
+| --- | --- |
+| `Invalid project ID` | empty id or longer than `MAX_PROJECT_ID_LENGTH` (64 bytes) |
+| `Invalid owner` | zero address |
+| `Invalid methodology` | empty methodology |
+| `Invalid baseline` | `baselineEmissions` is 0 or above `MAX_BASELINE` (10,000,000e18) |
+| `Invalid target` | `targetReduction` is 0 or above 100 |
+| `Invalid interval` | not 0 and outside 1 day to 365 days |
+| `Project already registered` | the id was registered before |
+| `Invalid URL length` / `URL must be https` | `iotEndpoint` is not an `https://` URL of 9 to 512 bytes |
+| same two messages | `satelliteRegion` is non-empty and not a valid `https://` URL |
+
+`iotEndpoint` is the primary measurement URL template. `satelliteRegion` is an optional second (cross-check) URL template, or `""`. The field name is a legacy: it no longer holds coordinates. In both templates `{projectId}`, `{from}` and `{to}` are substituted by the source. A project **without** a cross-check URL is measured at confidence 70 by the reference source and can therefore never reach `MIN_CLAIM_CONFIDENCE`: it is recorded but cannot mint.
+
+`verificationInterval = 0` becomes 30 days. Emits `ProjectRegistered`. `targetReduction` is stored but not compared with the measured reduction.
+
+### `deactivateProject(projectId, reason)`
+
+`onlyRole(VERIFIER_ROLE)`. Reverts `Project not active`. Clears the pending request, blocks claiming of any not-yet-claimed verification, emits `ProjectDeactivated`.
+
+### `requestVerification(projectId)`
+
+`onlyRole(VERIFIER_ROLE)`. Manual trigger, subject to the same rules as the automated path: `Project not active`, `Request pending`, `Verification interval not elapsed`, `Retry too soon`. Records a `VerificationRequest`, emits `VerificationRequested`. Needs the Functions config and source.
+
+### `checkUpkeep(bytes)` / `performUpkeep(bytes)`
+
+`checkUpkeep` (view) lists active projects that are due. `performUpkeep` (`AUTOMATION_ROLE`) decodes the list and requests verification for each project that is still due (stale entries are skipped).
+
+### Request arguments
+
+The request arguments are built onchain from the project and admin state:
+
+| Argument | Value |
+| --- | --- |
+| `args[0]` | project id |
+| `args[1]` | `project.iotEndpoint` |
+| `args[2]` | `project.satelliteRegion` (`""` = none) |
+| `args[3]` | `crossCheckToleranceBps` (decimal string) |
+| `args[4]` | measurement window start: `lastVerificationTime` (unix seconds) |
+| `args[5]` | window end: the request time (unix seconds) |
+
+Each endpoint is expected to answer HTTP 200 with JSON `{ "tonnesCO2e": <emissions of the window, tonnes CO2e> }`, on the same time basis as the project's onchain baseline. `crossCheckToleranceBps` is the largest disagreement between the two measurements that the Functions source tolerates.
+
+### `fulfillRequest` (router callback)
+
+Cheap by design: it only records the measurement. It rejects unknown, repeated and superseded request ids. The DON must answer exactly **64 bytes**:
+
+```solidity
+abi.encode(uint256 measuredEmissions, uint256 confidence)
+```
+
+`measuredEmissions` is tonnes CO2e of the window with 18 decimals; `confidence` is 1 to 100 and comes **from the answer** (the reference source returns 100 when two sources agree and 70 for a single source). The old constant confidence of 95 no longer exists.
+
+1. On an oracle error, a response that is not 64 bytes, a zero measurement, or a confidence of 0 or above 100: marks the request `failed`, emits `VerificationFailed(requestId, projectId, reason)` and `VerificationFulfilled(requestId, projectId, 0, 0, 0)`. The project can be requested again later.
+
+| `VerificationFailed` reason | Cause |
+| --- | --- |
+| `Oracle error` | the run returned an error |
+| `Malformed response` | response is not 64 bytes |
+| `Zero measurement` | measured emissions are 0 (indistinguishable from a dead sensor; never turned into a full-baseline credit) |
+| `Invalid confidence` | confidence is 0 or above 100 |
+
+2. Otherwise `reductionAchieved = baseline - measured` when measured is lower, else `0`. It stores the result (`confidenceScore` from the answer, `dataProofHash = keccak256(response)`), marks the period verified, sets `lastVerificationTime` and emits `VerificationFulfilled`. `Period already verified` reverts a second answer for the same period.
+
+### `claimCredits(bytes32 requestId)` returns `uint256 tokenId`
+
+`nonReentrant`, callable by anyone. Mints the credit for a recorded reduction to the project owner. Reverts: `Unknown request`, `Not verified` (not fulfilled or failed), `Already claimed`, `No reduction`, `Confidence too low` (below `MIN_CLAIM_CONFIDENCE` = 90), `Project not active`.
+
+Minting is deliberately **not** done inside the oracle callback: the real Functions router caps the callback gas and the mint path would run out of gas, silently dropping the result.
+
+`mintCredit` arguments:
+
+| Argument | Value |
+| --- | --- |
+| `to` | project `owner` |
+| `projectId` / `projectName` | project id |
+| `serialNumber` | `<methodology>-<projectId>-P<period>` |
+| `methodology` | project methodology |
+| `co2Tonnes` | `reductionAchieved` (already 18 decimals) |
+| `vintageYear` | calendar year of the request time |
+| `geography` | `"India"` (placeholder, hard-coded) |
+| `oracleProofHash` | the Chainlink `requestId` |
+| `satelliteDataCID` | empty |
+| `tokenURI` | `ipfs://Qm` + projectId (placeholder) |
+
+Then adds the amount to `projectCreditsMinted` and emits `CreditsMinted(projectId, owner, amount, tokenId)`.
+
+## Views and admin
+
+| Function | Access | Returns / behavior |
+| --- | --- | --- |
+| `getProject(projectId)` | view | `Project` |
+| `getVerificationRequest(requestId)` | view | `VerificationRequest` |
+| `getProjectRequests(projectId)` | view | `bytes32[]` |
+| `getActiveProjectCount()` | view | Number of active projects |
+| `setCrossCheckTolerance(bps)` | admin | 100 to 5000 bps (1 % to 50 %), else `Invalid tolerance`; emits `CrossCheckToleranceChanged` |
+| `setFunctionsConfig(donId_, subscriptionId_, gasLimit_)` | admin | `gasLimit_` 200,000 to 1,000,000 (`Gas limit out of bounds`); emits `FunctionsConfigUpdated` |
+| `setSource(newSource)` | admin | 1 to 16,000 bytes; emits `SourceUpdated(sourceHash, length)` |
+| `setDONHostedSecrets(slotId, version)` | admin | `version = 0` detaches secrets; emits `DONHostedSecretsUpdated` |
+| `grantAutomationRole(address)` | admin | Grants `AUTOMATION_ROLE` |
+
+## Secrets
+
+The reference source needs no secrets. If a provider requires an API key, upload it as DON-hosted secrets and attach it with `setDONHostedSecrets`. Because the URLs come from project registrars, always restrict the key to a single host with the `allowedUrlPrefix` secret (see `contracts/scripts/functions/README.md`).
+
+## Events
+
+| Event | Parameters |
+| --- | --- |
+| `ProjectRegistered` | `string indexed projectId, address indexed owner, uint256 baselineEmissions, uint256 targetReduction` |
+| `VerificationRequested` | `bytes32 indexed requestId, string indexed projectId, uint256 requestTime` |
+| `VerificationFulfilled` | `bytes32 indexed requestId, string indexed projectId, uint256 measuredEmissions, uint256 reductionAchieved, uint8 confidenceScore` |
+| `VerificationFailed` | `bytes32 indexed requestId, string indexed projectId, string reason` |
+| `CreditsMinted` | `string indexed projectId, address indexed owner, uint256 amount, uint256 tokenId` |
+| `ProjectDeactivated` | `string indexed projectId, string reason` |
+| `CrossCheckToleranceChanged` | `uint256 crossCheckToleranceBps` |
+| `FunctionsConfigUpdated` | `bytes32 donId, uint64 subscriptionId, uint32 gasLimit` |
+| `SourceUpdated` | `bytes32 indexed sourceHash, uint256 length` |
+| `DONHostedSecretsUpdated` | `uint8 slotId, uint64 version` |
+
+`SourceCodeUpdated` and `updateSourceCode` were removed with the oracle rewrite; see [Events & ABIs](/docs/contracts/events-and-abis#oracle-rewrite-chainlink-functions).

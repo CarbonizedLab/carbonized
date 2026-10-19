@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "status": "draft",
+  "chainId": 4663,
+  "releaseCommit": "REPLACE_WITH_EXACT_40_CHARACTER_GIT_COMMIT",
+  "audit": {
+    "report": "final-audit.pdf",
+    "sha256": "REPLACE_WITH_LOWERCASE_64_CHARACTER_SHA256_OF_FINAL_AUDIT_FILE",
+    "approvedAt": "2026-01-01T00:00:00.000Z"
+  },
+  "approvedBy": [
+    {
+      "address": "0xREPLACE_WITH_SECURITY_APPROVER_ADDRESS",
+      "signature": "REPLACE_WITH_EIP191_SIGNATURE_OF_RELEASE_APPROVAL_MESSAGE"
+    },
+    {
+      "address": "0xREPLACE_WITH_RELEASE_APPROVER_ADDRESS",
+      "signature": "REPLACE_WITH_EIP191_SIGNATURE_OF_RELEASE_APPROVAL_MESSAGE"
+    }
+  ]
+}

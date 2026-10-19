@@ -1,0 +1,39 @@
+---
+title: Portfolio
+description: Your credit holdings (indicative value) and onchain activity for the connected wallet, read directly from the chain.
+---
+
+Route: `/app/portfolio`. A holdings view with shortcuts to sell and retire. It sends no transactions and shows only real onchain data: there is no sample data and no investments tab.
+
+<Callout type="warn" title="Indicative values only">
+  Values are *tonnes held × the oracle price*. They are not a market valuation or a cost basis. On testnet the oracle uses a mock Functions router and usually has no price, so the value can be unavailable.
+</Callout>
+
+## What it shows
+
+| Element | Source |
+| --- | --- |
+| **Indicative Value** card | Sum of your NFT tonnes × `CarbonPriceOracle.getLatestPrice(methodology)`. Hidden as `*****` until you press **Show Values**. |
+| **Credits Held** card | Active (non-retired) NFT tonnes in your wallet |
+| **Credits Retired** card | Tonnes retired by this wallet (`userRetiredTonnes`) |
+| **Overview** tab | Allocation chart by tonnes (your own holdings) |
+| **Assets** tab | Onchain NFT credits you own (`balanceOf`, `tokenOfOwnerByIndex`, `credits(tokenId)`), non-retired only, each with quantity, oracle price and indicative value |
+| **Transactions** tab | Events for your wallet read from event logs: mint, retire, wrap, unwrap, order created / filled / cancelled, auction created / bid / finalized / cancelled, each with an explorer link. A banner warns when some history could not be loaded. |
+
+The event scan starts at `NEXT_PUBLIC_DEPLOY_BLOCK` when set; otherwise only recent blocks are read.
+
+## Actions
+
+| Button | Does |
+| --- | --- |
+| **Sell** on an asset | Navigates to [Sell Credits](/docs/app/sell-credits). |
+| **Retire** on an asset | Deep-links to [Carbon Wallet](/docs/app/carbon-wallet) with the retire dialog open for that token. |
+
+## States
+
+| State | Behaviour |
+| --- | --- |
+| Wallet not connected | Prompt to connect. |
+| Loading | Skeleton stat cards. |
+| Connected, no credits | "No carbon credits in your wallet yet." |
+| Event history partly unavailable | The Transactions tab shows a warning that the list may be incomplete. |

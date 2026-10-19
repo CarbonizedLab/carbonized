@@ -1,0 +1,51 @@
+---
+title: CARB utility token
+description: What the planned CARB token is for in Carbonized - fee tiers, an optional issuer bond and bounded parameter governance - and what it is not. Not launched yet.
+---
+
+<Callout type="warn" title="CARB is not launched yet">
+  CARB has not been launched or distributed. The contracts exist in the repository and are described here so you can review the design. There is no sale, no price and no allocation. Exact parameters are published at launch, and launch also depends on legal advice and permits that are not in place yet. The contracts are **unaudited**.
+</Callout>
+
+<Callout type="error" title="Legal notice">
+  This documentation is **not investment advice** and is **not an offer or solicitation** to buy or sell any token. CARB may be restricted or unavailable in your jurisdiction. No return, yield, profit or price is promised or implied. The contracts are unaudited. Get your own legal, tax and financial advice before you acquire or use any token. See [Risks and legal](/docs/token/risks-and-legal).
+</Callout>
+
+CARB is a **utility token** for the Carbonized carbon-credit protocol on Robinhood Chain. It has one fixed supply, minted once at deployment; the exact parameters are published at launch. It has three jobs and nothing else.
+
+## What CARB does
+
+| Utility | Contracts | Mechanism |
+| --- | --- | --- |
+| **Fee tiers** | `CarbStaking`, `CarbonMarketplace` | Stake CARB to hold a tier (0 to 3). A higher tier lowers the marketplace **trading fee** you pay as a seller, by at most 50 percent **of the fee**. Nothing is paid out to stakers. See [Staking and tiers](/docs/token/staking-and-tiers). |
+| **Issuer bond** | `IssuerBond`, `CarbonCreditNFT` | An alternative way to be granted the issuer role: lock a slashable CARB bond. Only when the owner opens that path. See [Issuer bond](/docs/token/issuer-bond). |
+| **Parameter governance** | `CarbGovernor`, `CarbTimelock` | CARB holders vote on a short list of bounded protocol parameters. See [Governance](/docs/token/governance). |
+
+The discount applies to the fee, never to the price of a credit. It applies to the CCT **seller** on order-book and auction sales, not to AMM swaps.
+
+## What CARB does not do
+
+No revenue share, rewards, APY, buy-back or mint function; no control over credit issuance or user escrow; not a claim on credits or on any treasury. The full list is on [What CARB does not do](/docs/token/what-carb-does-not-do).
+
+## Technical facts
+
+- ERC-20 with ERC-2612 permit, ERC-5805 votes and burn when deployed as the Carbonized token. Supply can only decrease (holders burning, and slashing, which burns by default).
+- The voting clock is `block.timestamp`. Robinhood Chain is an Arbitrum Orbit L2 where block numbers are not a wall-clock proxy, so every duration is in **seconds**.
+- Voting power counts only after `delegate(...)` (self-delegation is enough). **Staked and bonded CARB carry no votes.**
+- The Carbonized token contract has no owner, no pause, no blacklist, no transfer tax and no upgradeability.
+- If CARB is launched later through a third-party launchpad, it is an external ERC-20 that Carbonized does not control, and voting goes through a wrapper. See [Using an existing token (launchpad)](/docs/token/external-token).
+
+## Where it appears in the app
+
+[Token page](/docs/app/token) (balance, tier, stake and unstake) and [Governance page](/docs/app/governance) (proposals, delegation, voting), plus a Bond panel on the [Issuer page](/docs/app/issuer). All of them show a "CARB is not live yet" state until the CARB contract addresses are configured. See [Environment variables](/docs/deployment/environment-variables).
+
+## Pages in this section
+
+- [Staking and tiers](/docs/token/staking-and-tiers)
+- [Issuer bond](/docs/token/issuer-bond)
+- [Governance](/docs/token/governance)
+- [What CARB does not do](/docs/token/what-carb-does-not-do)
+- [Using an existing token (launchpad)](/docs/token/external-token)
+- [Risks and legal](/docs/token/risks-and-legal)
+
+The technical specification is `contracts/contracts/docs/TOKEN.md` in the repository. It is a technical document, not a prospectus or marketing material.

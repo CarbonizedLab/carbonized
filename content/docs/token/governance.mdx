@@ -1,0 +1,80 @@
+---
+title: Governance
+description: What CARB holders can and cannot govern, the proposal flow, bounds, timelock, delegation, and the staged decentralisation plan.
+---
+
+<Callout type="warn" title="CARB is not launched yet">
+  Governance is planned in stages (below), expressed without dates and not committed. Numbers marked "default" are from the deployment helper; the owner may change them before launch.
+</Callout>
+
+`CarbGovernor` is an OpenZeppelin Governor (for / against / abstain, quorum as a fraction of supply, timelock control) with bounds and a target allowlist. `CarbTimelock` executes passed proposals.
+
+## What can be governed
+
+Only bounded parameters, through the timelock, which holds `PARAMETER_ROLE` on the marketplace, staking and bond contracts and `SLASHER_ROLE` on the bond, and nothing else:
+
+- Marketplace: trading fee (at most 100 bps), minimum price per tonne, KYC gate, fee discount provider.
+- Staking: tier thresholds and tier discounts (discount at most 50 percent of the fee).
+- Issuer bond: minimum bond, whether the bond path is open (`bondRequired`), slash treasury, and slashing of bonded issuers.
+- Governor and timelock settings, within hard bounds, and the proposal target allowlist.
+
+## What cannot be governed
+
+- **Credit issuance.** `ISSUER_ROLE` and `ISSUER_ADMIN_ROLE` on the NFT are never given to governance. Even if a vote allowlisted the NFT, the grant would fail because the timelock holds no NFT role.
+- **User escrow.** No governance role can move marketplace escrow.
+- **Oracle writes, pausing, KYC status, fee withdrawal and role administration.** These stay with the multisig.
+- Proposals cannot carry ETH and may only call allowlisted contracts (marketplace, staking, bond, governor, timelock).
+- A captured vote can still slash bonded issuers and change the KYC gate or minimum price; see [Risks and legal](/docs/token/risks-and-legal).
+
+## Bounds
+
+| Setting | Default (helper) | Hard bounds |
+| --- | --- | --- |
+| Voting delay | 1 day | 1 hour to 7 days |
+| Voting period | 5 days | 1 to 14 days |
+| Proposal threshold | 1,000,000 CARB | at most 50,000,000 CARB |
+| Quorum | 4 percent | 1 to 20 percent |
+| Timelock delay | 2 days | 1 to 30 days |
+
+All durations are in **seconds** (timestamp clock). Quorum is a fraction of the **voting supply** at the snapshot: total supply for the Carbonized token (including tokens that cannot vote, such as treasury, staked and bonded), or the **wrapped vCARB supply** when CARB is an external token (below). If too little supply is delegated, proposals cannot reach quorum. The proposal threshold is an absolute amount, and the 1,000,000 CARB default is in whole tokens scaled by the token's decimals.
+
+## Delegation is required
+
+Voting power exists only after `delegate(...)`. Self-delegation is enough. **Staked and bonded CARB carry no votes.** Staking and bonding trade voting power for the tier or the issuer role.
+
+## Voting with an external token (wrapper)
+
+<Callout type="warn" title="Only applies if CARB is launched through a third-party launchpad">
+  See [Using an existing token (launchpad)](/docs/token/external-token) for requirements and risks.
+</Callout>
+
+If the external token has no ERC-5805 votes with a timestamp clock, the governor reads votes from **CarbVotes (vCARB)**, a 1:1 wrapper with no lock, fee, owner, pause or upgrade path. Flow: deposit CARB (after approval) → `delegate` on the wrapper → vote → withdraw at any time. Votes count from the next second. CARB staked, bonded or held unwrapped carries no votes. In the app, the Token page shows a **Voting power** section with Deposit and Withdraw buttons when a wrapper is configured, and the Governance page reads votes from the wrapper.
+
+Quorum is a percentage of the wrapped supply at the snapshot, not of the CARB total supply. A small wrapped supply means a small quorum, which is a governance-capture risk until enough CARB is wrapped and delegated.
+
+## Proposing in the app
+
+The [Governance page](/docs/app/governance) has a guided **Propose parameter change** form for allowlisted targets only: marketplace minimum price, trading fee, KYC gate, fee discount provider, staking tier thresholds and the issuer bond minimum. The app encodes the calldata with viem, shows a plain-language summary of what the proposal will call, and only then sends `propose`. Targets outside the allowlist are blocked in the form (and rejected by the Governor onchain).
+
+After the voting delay the proposal becomes active; holders vote for, against or abstain; a passed proposal is queued in the timelock and executed after the delay.
+
+## Staged decentralisation
+
+Planned, not committed, no dates (per the specification):
+
+| Stage | State |
+| --- | --- |
+| **0 Bootstrap** | Token launched, staking and optionally the bond deployed. The multisig holds every role including `PARAMETER_ROLE` and `SLASHER_ROLE`. Governor and timelock may exist but hold nothing. |
+| **1 Dual control** | Voting is live; delegation and turnout are observed. The timelock also receives `PARAMETER_ROLE` and `SLASHER_ROLE`. The multisig keeps all roles and can revoke the timelock's. |
+| **2 Governed parameters** | After a trial period without incident and with a sufficiently distributed, delegated supply, the multisig renounces its own `PARAMETER_ROLE` and `SLASHER_ROLE`. It keeps admin (guardian), pause, KYC, fee withdrawal and `ISSUER_ADMIN_ROLE`. |
+| **3 Optional** | Only with legal advice and community support, further low-risk roles may move to the timelock. Never issuance, oracle writes or anything that can touch user escrow. |
+
+**Emergency powers stay with the multisig.** `PAUSER_ROLE` intentionally stays with a fast multisig at every stage, because a governance delay of days is too slow for incident response. This is a deliberate centralisation. Until stage 2, a compromised multisig compromises the parameter set, the issuer allowlist and pause.
+
+## Related
+
+[CARB overview](/docs/token) · [Governance page in the app](/docs/app/governance) · [Roles and security](/docs/contracts/roles-and-security)
+
+<Callout type="error" title="Legal notice">
+  Not investment advice. Not an offer or solicitation. May be restricted in your jurisdiction. No returns are promised. The contracts are unaudited. Get your own advice.
+</Callout>

@@ -1,0 +1,22 @@
+{
+  "$schema": "..\\..\\.source\\json-schema\\docs.meta.json",
+  "title": "Carbonized Docs",
+  "pages": [
+    "index",
+    "quickstart",
+    "architecture",
+    "---Setup---",
+    "deployment",
+    "wallet",
+    "---Reference---",
+    "contracts",
+    "app",
+    "token",
+    "guides",
+    "---More---",
+    "roadmap",
+    "faq",
+    "troubleshooting",
+    "glossary"
+  ]
+}

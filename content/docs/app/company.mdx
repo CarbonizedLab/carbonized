@@ -1,0 +1,82 @@
+---
+title: Company
+description: Company registration on the onchain registry (contact data kept off-chain as a hash) and the company dashboard.
+---
+
+Two routes: `/app/company/register` and `/app/company/dashboard`. Both read and write the [`CarbonRegistry`](/docs/contracts/carbon-registry) contract; the optional backend is only a mirror and is off unless `NEXT_PUBLIC_BACKEND_URL` is set.
+
+<Callout type="warn" title="What becomes public">
+  Your company name, legal entity ID and emission figures are published **permanently** on a public blockchain and cannot be deleted. Your email and phone are **not** published: only a salted hash (`contactHash = keccak256(abi.encode(email, phone, salt))`) is stored onchain. The email, phone and the random salt stay in this browser's local storage.
+</Callout>
+
+## Registration — `/app/company/register`
+
+Registers your wallet as a company **onchain**. There is no starter pack and no free credits: registration does not mint anything.
+
+### Form
+
+| Field | Required | Validation |
+| --- | --- | --- |
+| Company Name | Yes | 1 to 100 characters |
+| Legal Entity ID | Yes | 1 to 64 characters (tax ID, registration number, …) |
+| Scope 1 / 2 / 3 emissions (tonnes CO₂e) | No | Empty or a number between 0 and 1 trillion; the form shows the running total |
+| Email | Yes | Must contain `@`, up to 120 characters. Never sent onchain. |
+| Phone | Yes | 1 to 32 characters. Never sent onchain. |
+
+### What happens on submit (new company)
+
+| # | Step | Call | Fails if |
+| --- | --- | --- | --- |
+| 1 | Hash the contact data | The browser generates a random salt and computes `contactHash` | n/a |
+| 2 | Register | `CarbonRegistry.registerCompany(name, legalId, scope1, scope2, scope3, contactHash)`; the page waits for the receipt | `Already registered` (this wallet already has a company or trader profile), contract paused, wallet rejection |
+| 3 | Remember contact data | Email, phone and salt are saved in this browser's local storage | n/a |
+| 4 | Optional backend mirror | Only if `NEXT_PUBLIC_BACKEND_URL` is set: the form values, **including email and phone**, are posted to that server | Failures are silent |
+
+Leave `NEXT_PUBLIC_BACKEND_URL` empty unless you run your own backend; with it empty nothing leaves the browser except the onchain transaction.
+
+### Editing an existing company
+
+When the wallet is already registered the form is prefilled from the chain and the button reads **Save Changes Onchain**. A changed name or legal entity ID, or newly entered email and phone (which create a new `contactHash`), call `updateCompanyProfile`; changed emissions call `updateEmissions`. Leave email and phone empty to keep the current contact hash.
+
+<Callout type="warn" title="Editing resets KYB">
+  Any change of name, legal entity ID, contact hash or any Scope 1/2/3 figure automatically resets the KYB "verified" flag, and a verifier must review the new profile again. A KYB approval covers exactly the profile hash that was reviewed (`profileHashOf(company)`).
+</Callout>
+
+### Other states
+
+| State | Behaviour |
+| --- | --- |
+| Wallet not connected | "Wallet connection required" |
+| `NEXT_PUBLIC_CARBON_REGISTRY` missing | "Registry not configured" |
+| Wallet registered as a trader | Explains that a wallet holds one profile and links to the trader dashboard |
+
+## Dashboard — `/app/company/dashboard`
+
+| Element | Source |
+| --- | --- |
+| Header: name, Legal ID, **KYB Verified / KYB Pending** badge | `CarbonRegistry.getCompanyData` |
+| **Total Emissions** | Scope 1 + 2 + 3 from the registry (tonnes) |
+| **Available Credits** | Sum of `co2Tonnes` of NFT credits you own (onchain) |
+| **Credits Needed** | `max(total emissions − available credits, 0)` |
+| **Credit Coverage** | `available ÷ total × 100`; `0.0%` when no emissions are reported |
+| Tabs: Overview (contact commitment hash, quick actions, status incl. KYB), Emissions, Credits (NFT cards), Requests | Mixed |
+| **Reported Emissions History** chart (Emissions tab) | Rebuilt from the registry's `CompanyRegistered` and `EmissionsUpdated` events, scanning from `NEXT_PUBLIC_DEPLOY_BLOCK` |
+| Annual reduction target (Emissions tab) | `target` from the registry, shown when set |
+| Requests tab | Static pointer to Credit Requests; it does not list your orders |
+
+The contact section shows the **contact commitment (hash)**, not your email or phone. Quick actions link to Credit Requests, Marketplace, Sell Credits, Auctions, Edit Profile and the Emissions Tracker. The coverage maths counts only NFTs in your wallet; credits you have wrapped into CCT no longer show as NFTs, so coverage drops after wrapping.
+
+KYB verification is set by a wallet holding `VERIFIER_ROLE` on the registry ("KYB reviewed"); until then the badge shows **KYB Pending**. It is a review of the submitted profile, not a guarantee about the company.
+
+### States
+
+| State | Behaviour |
+| --- | --- |
+| Wallet not connected | "Connect wallet to view dashboard" |
+| Registry not configured | "Registry not configured" |
+| Loading | Skeletons |
+| No company profile | "Company not found" with a **Register Company** button (or a pointer to the trader dashboard for trader wallets) |
+
+## Related
+
+[Register a company](/docs/guides/register-company) · [CarbonRegistry reference](/docs/contracts/carbon-registry)

@@ -1,0 +1,78 @@
+---
+title: "China's Carbon Market in Plain English: ETS vs CCER"
+description: "How China's national emissions trading system and the CCER offset scheme differ, how they connect, and why the distinction matters for anyone designing a carbon marketplace."
+date: 2026-08-19
+tags: ['china', 'ets', 'ccer', 'compliance-market']
+image: /images/blog/chinas-carbon-market-ets-vs-ccer.jpg
+imageCredit: "Photo: Ermell / Wikimedia Commons (CC0) — https://commons.wikimedia.org/wiki/File:Shanghai_skyline_waterfront_pudong_5166168_69_70.jpg"
+author: Carbonized
+---
+
+**TL;DR:** China's national emissions trading system (ETS) trades *allowances* that regulated companies need to cover their emissions. CCER is a separate system that issues *offset credits* for certified projects, which covered companies may use in limited amounts. Allowances are permits; credits are project outcomes. Confusing the two is the first mistake newcomers make.
+
+Carbonized is oriented toward the China market, so this is the framing we want to share. We are not regulators or lawyers, and rules in this area change, so treat this as an orientation and check the current official documents before making any compliance decision.
+
+## Two instruments, two jobs
+
+Think of the market as having a **ceiling** and a **release valve**.
+
+- The ETS sets the ceiling: covered entities must hold enough allowances to match their emissions for a compliance period.
+- CCER is the release valve: certain verified projects create credits that can offset a small share of a company's obligation.
+
+### The ETS: allowances for covered emitters
+
+China's national ETS began trading in 2021 and started with the power-generation sector. Starting with one sector made sense: power plants are large, few in number relative to the whole economy, and have relatively standardised, measurable emissions. Since then the scheme has been widening toward other energy-intensive industries such as steel, cement and aluminium. Check official announcements for the current scope, since this is an area of active expansion.
+
+A key design feature is that allocation has been **intensity-based** rather than an absolute cap. Instead of fixing a total tonnage for the whole sector, regulators set benchmarks for emissions per unit of output (for example, per unit of electricity generated). A plant's free allowance is derived from its actual output multiplied by the benchmark. A plant that is cleaner than the benchmark ends up with a surplus it can sell; a dirtier one must buy. Intensity-based systems reward efficiency without directly capping growth, which suited China's development stage. Over time, many observers expect a gradual move toward absolute caps, but that is a policy path, not something I can promise.
+
+Allowances are issued and tracked in registries operated for the scheme, and traded on a national exchange. Only regulated entities (and, depending on the rules, certain approved participants) take part directly.
+
+### CCER: credits for certified projects
+
+CCER stands for China Certified Emission Reduction. The original scheme ran from the early 2010s and was paused in 2017 while authorities worked to improve its management and the quality of registered projects. It was relaunched in 2024 under a new framework, with an official methodology list that started with a few project types, for example offshore wind, concentrated solar power, and mangrove restoration, and which is expected to grow.
+
+A CCER credit is a claim that a registered project reduced or removed a tonne of CO2e compared to a baseline, verified by an approved third party. Conceptually it is cousin to a Verra or Gold Standard credit, but it lives inside China's regulatory framework with its own registry, methodologies and trading arrangement.
+
+### How they connect
+
+Covered companies in the ETS may be allowed to use CCERs to offset a limited portion of their compliance obligation. The cap on that share has been small, on the order of a few percent in the published rules, so offsets are a supplement to cutting emissions rather than a loophole. The limit protects the integrity of the allowance market: if offsets were unlimited, project quality would determine the whole system's stringency.
+
+Because the rules include these limits and eligibility criteria, a project's credits are only useful for compliance if they meet the exact requirements, including where and when the reductions occurred.
+
+## Compliance versus voluntary: why it matters
+
+| | ETS allowance | CCER credit | Voluntary credit |
+| --- | --- | --- | --- |
+| Who issues | Regulator | Registry under national framework | Independent standard (Verra, Gold Standard) |
+| What it represents | Right to emit one tonne | Verified project reduction | Verified project reduction |
+| Who needs it | Covered emitters | Covered emitters (limited use), others voluntarily | Companies with voluntary targets |
+| Demand driver | Law | Law plus voluntary interest | Reputation, targets, investor pressure |
+
+Compliance demand is driven by law and tends to be larger and more stable. Voluntary demand is driven by corporate commitments and is more sensitive to credibility debates. A platform serving Chinese companies needs to be clear which kind of instrument a user is touching, since the legal consequences differ.
+
+## Where international frameworks fit
+
+Voluntary standards such as Verra VCS and Gold Standard operate internationally. Under the Paris Agreement's Article 6, countries can cooperate on carbon markets, and questions of authorisation and corresponding adjustments determine whether a reduction is counted by one country or transferred to another. How a Chinese project's credits may be used abroad, or foreign credits at home, depends on policy that is still developing. I would not build a product that assumes it is settled.
+
+## What this means for Carbonized
+
+Carbonized today is a **testnet prototype**, not a licensed compliance venue. It does not connect to China's national registry, does not trade ETS allowances, and does not issue CCERs. What it can offer is an open, transparent model for how verified credits might be represented, traded and retired onchain.
+
+A few design choices follow from the China framing.
+
+- **Methodology as a first-class field.** Each credit stores the standard it follows, and token pools are separated per methodology so credits of different types are not mixed. See [CarbonCreditToken](/docs/contracts/carbon-credit-token).
+- **Retirement with a reason and certificate.** Compliance and reporting users need a durable record of what was retired and why. Our [certificates](/docs/app/certificates) page rebuilds them from chain events.
+- **Inventory tools aligned to GHG Protocol and ISO 14064.** Before offsetting anything, a company needs a defensible footprint; the [emissions tracker](/docs/app/emissions) and [assessment page](/docs/app/assess) support that. Our [inventory guide](/blog/scope-1-2-3-first-emissions-inventory) walks through the concepts.
+
+Whether onchain representations of CCERs or allowances would ever be permitted is a regulatory question outside our control. Anything resembling that would need legal review and regulator engagement.
+
+## Questions to ask before using any credit for compliance
+
+1. Is this instrument recognised by the scheme I am reporting under?
+2. Are the vintage and project type on the eligible list?
+3. Is there a cap on the share of obligation I can offset?
+4. Who holds the official registry record, and how is retirement evidenced?
+
+## Takeaway
+
+The ETS decides *how much* a covered company may emit; CCER offers a bounded way to compensate for some of it using verified projects. Keeping the two separate in your mind, and in your software, avoids most of the confusion in this market. If you are building or buying in it, read the current official rules, because this field moves quickly.

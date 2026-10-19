@@ -1,0 +1,97 @@
+---
+title: Architecture
+description: How Carbonized's contracts, oracles and web app fit together.
+---
+
+## Components
+
+| Component | Type | Role |
+| --- | --- | --- |
+| `CarbonCreditNFT` | ERC-721 (Enumerable, URIStorage, AccessControl, Pausable) | Registry of credits. Each NFT carries CO2 tonnes (18 decimals), methodology, a mandatory registry serial and a retirement flag. Only `ISSUER_ROLE` can mint (administered by `ISSUER_ADMIN_ROLE`); retiring is permanent. |
+| `CarbonCreditToken` (CCT) | ERC-20, 18 decimals | Wraps NFTs 1:1 by tonnes (`wrapCredit` / `unwrapCredit`). One deployment per methodology. Only credits with a registry serial and a non-zero oracle proof hash can be wrapped. |
+| `CarbonMarketplace` | AccessControl, ReentrancyGuard, Pausable | Order book, auctions and an AMM pool, all settled in the payment token (payment token). Trades one CCT and one payment token (both `immutable`). |
+| `CarbonRegistry` | AccessControl, Pausable | Company and trader profiles, emissions, emission targets and KYB status. Stores only a `contactHash`, never raw email or phone. Standalone: no role on the NFT. |
+| `EmissionVerifier` | Chainlink Functions client | Requests emission data via Chainlink Functions from operator-provided endpoints and records the measurement and a confidence taken from the DON answer. `claimCredits(requestId)` mints the credits (needs `ISSUER_ROLE` on the NFT; requires confidence of at least 90). |
+| `RegistrySync` | Chainlink Functions client | Advisory check of serial numbers against operator-configured external registry endpoints to help prevent double counting. The NFT does not call it. |
+| `CarbonPriceOracle` | Chainlink Functions client | Median carbon price from operator-provided sources (Chainlink Functions) with a multisig manual-report fallback. No contract consumes it onchain; the web app only reads it for indicative values and labels it "Oracle" or "Manual report". |
+| `CarbToken` (CARB) | ERC-20 + permit + votes | Utility and governance token with a fixed supply minted once; timestamp-clock voting. Not launched yet. |
+| `CarbStaking` | AccessControl | Stake CARB for a tier 0 to 3 (warm-up and cooldown); the marketplace reads the tier as a discount on its trading fee. No rewards. |
+| `IssuerBond` | AccessControl | CARB bond for the bonded-issuer path to `ISSUER_ROLE`; unbonding delay, dispute window and slashing. |
+| `CarbGovernor`, `CarbTimelock` | OpenZeppelin Governor + TimelockController | CARB-weighted votes over bounded protocol parameters, executed after a timelock delay on allowlisted contracts only. |
+| `MockERC20` | Test token | Stand-in for payment token on testnet and local chains only, public `mint`. |
+| `MockFunctionsRouter` | Test router | Stand-in for the Chainlink Functions router on testnet and local chains only. |
+
+Contract details: [Contracts overview](/docs/contracts/overview).
+
+## Component diagram
+
+```text
+                        ┌────────────────────────────┐
+                        │   Web app (Next.js /app)   │
+                        │  wagmi + viem + Reown      │
+                        └──────┬───────────────┬─────┘
+                  JSON-RPC     │               │  HTTP (optional, off by default)
+                               ▼               ▼
+┌──────────────────────── EVM chain ──────┐   ┌──────────────────┐
+│                                         │   │ Backend API      │
+│  EmissionVerifier ──ISSUER_ROLE──┐      │   │ NEXT_PUBLIC_     │
+│  RegistrySync (advisory)         ▼      │   │ BACKEND_URL      │
+│  CarbonPriceOracle        CarbonCreditNFT   │ depository only; │
+│        ▲                   ▲  │ retire   │   │ leave empty      │
+│        │ Functions         │  │          │   │ unless you run   │
+│  Functions router          │  ▼ wrap     │   │ one              │
+│  (mock on testnet)   CarbonCreditToken  │   └──────────────────┘
+│                            │ CCT (ERC-20)│
+│  CarbonRegistry            ▼            │
+│  (standalone)       CarbonMarketplace   │
+│  payment token (6 dec) ────► orders · auctions · AMM
+└─────────────────────────────────────────┘
+```
+
+The optional CARB token stack (not launched yet) sits beside this diagram and touches it in two places: `CarbStaking` is the marketplace's fee-discount provider (a failing provider means no discount, never a blocked trade), and `IssuerBond` holds `ISSUER_ADMIN_ROLE` on `CarbonCreditNFT` for the bonded-issuer path. Governance (`CarbGovernor` + `CarbTimelock`) holds only parameter and slasher roles on the marketplace, staking and bond contracts, never issuance or escrow. See [Contracts overview](/docs/contracts/overview).
+
+## Data flow
+
+<Steps>
+<Step>
+
+### Issue
+
+An account with `ISSUER_ROLE` mints credits on `CarbonCreditNFT` with `mintCredit` (full project metadata, a mandatory registry serial and a non-zero oracle proof hash) or `batchMint` (up to 100). `EmissionVerifier` mints through `claimCredits(requestId)` once a verified reduction is recorded; it must hold `ISSUER_ROLE` for that. There is no public or faucet mint path anywhere in the system.
+
+</Step>
+<Step>
+
+### Wrap
+
+The owner calls `CarbonCreditToken.wrapCredit(tokenId)`. The NFT is locked in the token contract and CCT is minted equal to the NFT's tonnes. `unwrapCredit(tokenId)` reverses it.
+
+</Step>
+<Step>
+
+### Trade
+
+`CarbonMarketplace` trades CCT against the payment token via buy/sell orders (`createBuyOrder`, `createSellOrder`, `fillOrder`), auctions (`createAuction`, `placeBid`, `finalizeAuction`) or AMM (`addLiquidity`, `swap`; contract-level only, not in the UI). Prices are payment-token base units per tonne and cost is `amount * price / 1e18`. The trading fee is `tradingFeePercent` basis points over `FEE_DENOMINATOR = 10000`; default `25` (0.25%), capped at `100` (1%) by `setTradingFee`. Fees accrue on the contract and are withdrawn by `FEE_MANAGER_ROLE` with `withdrawFees`. If a payment cannot be pushed (for example a payment token blacklist), it is credited to `pendingWithdrawals` and the user calls `claim()`.
+
+</Step>
+<Step>
+
+### Retire
+
+An NFT owner calls `CarbonCreditNFT.retireCredit(tokenId, reason)` (reason must be non-empty). The NFT is burned and a certificate record is stored onchain. The reason is a free-text, self-declared statement.
+
+</Step>
+</Steps>
+
+## Web app wiring
+
+- The app reads the contract addresses from the `NEXT_PUBLIC_*` variables. Under `NEXT_PUBLIC_NETWORK=hardhat` (or chain id `31337`) it falls back to Hardhat's deterministic addresses.
+- It targets a single chain selected by `NEXT_PUBLIC_NETWORK` (see [Networks](/docs/wallet/networks)): `robinhood-mainnet` (4663) or `robinhood` (testnet, 46630) among others.
+- The app reads `decimals()` of the payment token once and never assumes 18. Approvals are exact bigint amounts (payment token cost rounded up), the allowance is re-read before each transaction and re-approved when short.
+- Contract reads and writes go through shared hooks used by all pages.
+- The app shell shows a banner when any contract address is unset, and a red/amber "Testnet / unaudited" banner when the network is not `robinhood-mainnet`.
+- Email and phone are never written onchain; the browser keeps them (with a random salt) in local storage and only the `contactHash` goes to `CarbonRegistry`.
+
+<Callout type="warn" title="Mocks and limits on testnet">
+  On testnet, payment token is `MockERC20` (public `mint`) and the Chainlink Functions router is `MockFunctionsRouter`, so price, verification and registry-check requests are not served by a real DON there. Mainnet has no mock contracts. The contracts are unaudited.
+</Callout>

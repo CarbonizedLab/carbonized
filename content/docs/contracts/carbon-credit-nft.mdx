@@ -1,0 +1,188 @@
+---
+title: CarbonCreditNFT
+description: ERC-721 registry of issuer-created carbon credits with metadata, double-counting protection and retirement certificates.
+---
+
+**Inherits:** `ERC721URIStorage`, `ERC721Enumerable`, `AccessControl`, `Pausable`, `ReentrancyGuard` (OpenZeppelin 4.x)
+**Token:** name `Carbonized Credit`, symbol `CBZ`.
+
+Each token is one carbon credit. Metadata is stored onchain in the `CarbonCredit` struct. Retiring a credit stores a certificate and **burns** the NFT.
+
+<Callout type="warn" title="Issuance model: issuer only, no faucet">
+  The only way to create a credit is `mintCredit` or `batchMint`, both restricted to `ISSUER_ROLE` (the `EmissionVerifier` contract, an operator multisig, or, if the bond path is open, an issuer whose CARB bond is held by [`IssuerBond`](/docs/contracts/issuer-bond)). There is no public, faucet or "starter" minting path: `registerAndClaimCredits()`, `mintSimpleCredits()` and `hasRegistered` no longer exist. A credit is "issued by an authorized issuer", not independently verified onchain: the contract only checks that the serial is non-empty and the `oracleProofHash` is non-zero, and it never calls an oracle. See the [issuer onboarding policy](/docs/guides/issuer).
+</Callout>
+
+## Constructor
+
+`constructor()` takes no parameters. The deployer receives `DEFAULT_ADMIN_ROLE`, `PAUSER_ROLE` and `ISSUER_ADMIN_ROLE`, and `ISSUER_ROLE`'s role admin is set to `ISSUER_ADMIN_ROLE`. No other role is granted. On mainnet the deployer should `grantRole` all three to a multisig and renounce its own.
+
+## Roles
+
+| Constant | Used by |
+| --- | --- |
+| `ISSUER_ROLE` | `mintCredit`, `batchMint`. Administered by `ISSUER_ADMIN_ROLE`. |
+| `ISSUER_ADMIN_ROLE` | Admin of `ISSUER_ROLE`: grants and revokes it. See [Issuer administration](#issuer-administration). |
+| `PAUSER_ROLE` | `pause`, `unpause` |
+| `ORACLE_ROLE` | `updateVerification` |
+| `VERIFIER_ROLE` | Declared, **not referenced by any function** |
+
+## Data structures
+
+```solidity
+struct CarbonCredit {
+    string  projectId;
+    string  projectName;
+    string  methodology;        // e.g. "ICM_COMPLIANCE", "VERRA_VCS", "GOLD_STANDARD"
+    uint256 co2Tonnes;          // 18 decimals: 1e18 = 1 tonne
+    uint256 vintageYear;
+    string  geography;
+    bytes32 oracleProofHash;
+    string  satelliteDataCID;
+    address verificationSource; // msg.sender of the mint (the issuer)
+    uint256 verificationDate;
+    bool    isRetired;
+    uint256 issuanceDate;
+    string  serialNumber;       // external registry serial, mandatory
+}
+
+struct RetirementCertificate {
+    uint256 originalTokenId;
+    address retiredBy;
+    uint256 retirementDate;
+    string  retirementReason;
+    uint256 co2Tonnes;
+}
+
+// declared at file level, used by batchMint
+struct CreditData {
+    string projectName; string serialNumber; string methodology;
+    uint256 co2Tonnes; uint256 vintageYear; string geography;
+    bytes32 oracleProofHash; string satelliteDataCID; string tokenURI;
+}
+```
+
+## Public state
+
+| Name | Type | Meaning |
+| --- | --- | --- |
+| `credits` | `mapping(uint256 => CarbonCredit)` | Metadata by token id. Survives burning (`isRetired` stays `true`). |
+| `issuedSerials` | `mapping(bytes32 => bool)` | Canonical serial key already tokenized (see below). |
+| `retirementCertificates` | `mapping(uint256 => RetirementCertificate)` | By token id. The web app's certificate page reads this record. |
+| `projectCredits` | `mapping(string => uint256[])` | Token ids per `projectId`. |
+| `userRetiredTonnes` | `mapping(address => uint256)` | Retired-tonnes counter per retiree. |
+| `totalMintedTonnes`, `totalRetiredTonnes`, `totalActiveCredits` | `uint256` | Global stats (`totalActiveCredits` counts credits, not tonnes). |
+| `methodologyTonnes` | `mapping(string => uint256)` | Minted tonnes per methodology. |
+| `MAX_TONNES_PER_CREDIT`, `MIN_VINTAGE_YEAR`, `MAX_VINTAGE_YEAR`, `MAX_BATCH_MINT` | constants | 10,000,000 tonnes, 2015, 2050, 100 |
+
+## Minting
+
+### `mintCredit(...)` returns `uint256 tokenId`
+
+`external`, `onlyRole(ISSUER_ROLE)`, `whenNotPaused`, `nonReentrant`.
+
+| Parameter | Type |
+| --- | --- |
+| `to` | `address` |
+| `projectId`, `projectName`, `serialNumber`, `methodology` | `string` |
+| `co2Tonnes`, `vintageYear` | `uint256` |
+| `geography` | `string` |
+| `oracleProofHash` | `bytes32` |
+| `satelliteDataCID`, `tokenURI` | `string` |
+
+Validation (shared by `mintCredit` and every item of `batchMint`):
+
+| Message | Condition |
+| --- | --- |
+| `Invalid recipient` | `to == address(0)` |
+| `Project required` | empty `projectId` |
+| `Methodology required` | empty `methodology` |
+| `Invalid CO2 amount` | `co2Tonnes == 0` or above 10,000,000 tonnes |
+| `Invalid vintage year` | `vintageYear` outside 2015 to 2050 |
+| `Oracle proof required` | `oracleProofHash == bytes32(0)` |
+| `Serial required` | empty or whitespace-only `serialNumber` |
+| `Credit already tokenized` | canonical serial already in `issuedSerials` |
+
+**Double-counting key.** The serial is trimmed of ASCII whitespace, upper-cased (a-z) and hashed with `abi.encode`. The free-form methodology label is **not** part of the key, so the same serial cannot be tokenized again under another label. Serials should carry the registry prefix (for example `VCS-12345`). `isSerialTokenized(methodology, serial)` ignores its first argument and is kept for ABI compatibility.
+
+Effects: increments the token counter, writes the struct (`verificationSource = msg.sender`), marks the serial used, updates stats and `projectCredits`, emits `CreditMinted` and `SerialNumberRegistered`, then `_safeMint` and sets the URI. State is written before the receiver callback and the function is `nonReentrant`.
+
+<Callout type="warn">
+The contract does not verify `oracleProofHash` against any oracle, and does not call `RegistrySync`. The trust anchor is whoever holds `ISSUER_ROLE`.
+</Callout>
+
+### `batchMint(address to, string projectId, CreditData[] credits_)` returns `uint256[]`
+
+Same role and modifiers. Size must be 1 to 100 (`Invalid batch size`). Every item goes through the same validation and emits the same events as `mintCredit`, plus one `CreditBatchMinted(tokenIds, projectId, totalTonnes)` for the batch. One batch has a single recipient and a single `projectId`. Cost is about 0.49M gas per credit, so 100 credits would exceed the roughly 16.7M gas transaction limit of the target chain: the web app's [Issuer page](/docs/app/issuer) sends at most **25 credits per transaction**. A reverting item reverts the whole batch.
+
+## Retirement
+
+### `retireCredit(uint256 tokenId, string reason)`
+
+`external`, `nonReentrant`. The burn goes through `_beforeTokenTransfer`, which is `whenNotPaused`, so it reverts while the contract is paused.
+
+| Message | Condition |
+| --- | --- |
+| `Not credit owner` | `ownerOf(tokenId) != msg.sender` (reverts with OZ `ERC721: invalid token ID` if it does not exist) |
+| `Already retired` | `isRetired == true` |
+| `Reason required` | empty `reason` |
+| `Credit not initialised` | the stored credit has zero tonnes |
+
+Sets `isRetired`, writes the certificate, increments `totalRetiredTonnes` and `userRetiredTonnes`, decrements `totalActiveCredits`, emits `CreditRetired`, then `_burn`s the token. A credit wrapped into a CCT is owned by the token contract, so it must be unwrapped before it can be retired.
+
+The `reason` is free text chosen by the caller: it is a **self-declared, unverified** beneficiary statement and is public and permanent.
+
+### `batchRetire(uint256[] tokenIds, string reason)`
+
+Same checks per token (`Not owner`, `Already retired`, `Credit not initialised`), 1 to 50 ids (`Invalid batch size`). The `reason` is **not** required to be non-empty here. Emits one `CreditRetired` per token.
+
+<Callout title="What a certificate proves">
+A retirement certificate proves that a token was burned by an address on a given date, with the stored reason. It does not prove that the underlying project exists or that the issuer's data is correct.
+</Callout>
+
+## Views
+
+| Function | Returns / behavior |
+| --- | --- |
+| `getCreditDetails(tokenId)` | `CarbonCredit`; reverts `Token does not exist` for burned/unknown ids |
+| `getProjectCredits(projectId)` | `uint256[]` |
+| `getRetirementCertificate(tokenId)` | `RetirementCertificate`; reverts `Not retired` |
+| `getGlobalStats()` | `(minted, retired, active, totalTokens)`. `totalTokens` is the id counter (includes burned) |
+| `getMethodologyStats(methodology)` | tonnes minted for that methodology |
+| `isSerialTokenized(methodology, serialNumber)` | `bool` (methodology is ignored) |
+| `credits`, `issuedSerials`, `retirementCertificates`, `projectCredits`, `userRetiredTonnes`, ... | auto-generated getters |
+
+Burned credits can no longer be read with `getCreditDetails`, but `credits(tokenId)` and `retirementCertificates(tokenId)` still return the stored data.
+
+## Issuer administration
+
+`ISSUER_ROLE` is administered by a dedicated role, `ISSUER_ADMIN_ROLE`, not by `DEFAULT_ADMIN_ROLE`. The constructor calls `_setRoleAdmin(ISSUER_ROLE, ISSUER_ADMIN_ROLE)`, so only holders of `ISSUER_ADMIN_ROLE` can `grantRole` / `revokeRole` for `ISSUER_ROLE`. `DEFAULT_ADMIN_ROLE` administers `ISSUER_ADMIN_ROLE` itself, so the multisig can always re-point issuer administration.
+
+| Holder of `ISSUER_ADMIN_ROLE` | Purpose |
+| --- | --- |
+| the multisig | grants `ISSUER_ROLE` directly to **trusted issuers** |
+| [`IssuerBond`](/docs/contracts/issuer-bond) (if deployed) | grants and revokes `ISSUER_ROLE` for **bonded issuers** |
+
+The deployer receives `ISSUER_ADMIN_ROLE` in the constructor. **Deployment scripts must hand `ISSUER_ADMIN_ROLE` to the multisig and renounce it from the deployer**, otherwise the deployer keeps issuer-admin power. `ISSUER_ADMIN_ROLE` is never given to the governance timelock: issuance stays off-governance.
+
+## Admin
+
+| Function | Role | Behavior |
+| --- | --- | --- |
+| `pause()` / `unpause()` | `PAUSER_ROLE` | Toggles pause. While paused, minting **and every transfer/burn** revert. |
+| `updateVerification(tokenId, newProofHash, newSatelliteCID)` | `ORACLE_ROLE` | Overwrites proof hash and satellite CID, sets `verificationDate`, emits `VerificationUpdated`. A zero proof is rejected (`Oracle proof required`). Reverts `Token does not exist`. Not pause-gated. |
+
+## Events
+
+| Event | Parameters |
+| --- | --- |
+| `CreditMinted` | `uint256 indexed tokenId, string indexed projectId, address indexed recipient, uint256 co2Tonnes, string methodology` |
+| `CreditRetired` | `uint256 indexed tokenId, address indexed retiredBy, uint256 timestamp, uint256 co2Tonnes, string reason` |
+| `CreditBatchMinted` | `uint256[] tokenIds, string projectId, uint256 totalTonnes` |
+| `VerificationUpdated` | `uint256 indexed tokenId, address verifier, bytes32 newProofHash` |
+| `SerialNumberRegistered` | `bytes32 indexed serialHash, string serialNumber, uint256 tokenId` |
+
+Plus the standard ERC-721 `Transfer`, `Approval`, `ApprovalForAll`, and `Paused`/`Unpaused`/`RoleGranted`/`RoleRevoked`.
+
+## Size
+
+The contract is large but under the EIP-170 limit of 24,576 bytes: the design document for the token stack records a runtime size of 19,616 bytes for the current source (compiler 0.8.20, `viaIR`, optimizer runs 1). Local Hardhat networks disable the contract-size limit (`allowUnlimitedContractSize`), so check the size with the project's size task and confirm the target chain accepts the bytecode before deploying. See [Known limitations and security notes](/docs/contracts/roles-and-security#known-limitations-and-security-notes).

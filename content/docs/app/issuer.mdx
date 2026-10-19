@@ -1,0 +1,69 @@
+---
+title: Issuer
+description: Public information about the issuer role, the issuer list, and the issuance forms for wallets that hold ISSUER_ROLE.
+---
+
+Route: `/app/issuer` (sidebar: **Carbon Credits → Issuer**). The page is visible to everyone. It explains who may create credits, lists the current issuers and, for wallets that hold `ISSUER_ROLE` on `CarbonCreditNFT`, issues credits. Without `NEXT_PUBLIC_CARBON_CREDIT_NFT` the status card shows "Carbon credit NFT not configured".
+
+<Callout type="warn" title="Issuers are trusted parties">
+  The contract validates formats and uniqueness, not facts. A credit is only as trustworthy as its issuer. See the [issuer onboarding policy](/docs/guides/issuer).
+</Callout>
+
+## What each visitor sees
+
+| Visitor | Status card | Forms |
+| --- | --- | --- |
+| No wallet | "Connect a wallet", plus how to apply | Visible but disabled |
+| Wallet without the role | "This wallet is not an issuer", plus how to apply and a link to the [issuer guide](/docs/guides/issuer) | Visible but disabled |
+| Issuer wallet | "This wallet holds ISSUER_ROLE" (a warning if the NFT contract is paused: minting reverts then) | Enabled |
+| Admin wallet (`DEFAULT_ADMIN_ROLE`) | Also shows the admin badge | Role management card |
+
+The role is read with `hasRole` on the NFT contract. Everyone also sees the **public issuer list** (current `ISSUER_ROLE` holders, rebuilt from `RoleGranted` / `RoleRevoked` events and confirmed with `hasRole`; the `EmissionVerifier` contract is labelled) and the **recently issued credits** table.
+
+## Single credit
+
+Fields: recipient, methodology (`ICM_COMPLIANCE`, `VERRA_VCS`, `GOLD_STANDARD`), project ID and name, registry serial number, CO2 tonnes (whole tonnes, 1 to 10,000,000), vintage year (2015 to 2050), geography, evidence / oracle proof hash, satellite data CID (optional) and the metadata URL (`ipfs://`, `https://` or `ar://`).
+
+- **Live serial check.** While you type, the page shows the canonical form (trimmed, upper-cased) and calls `isSerialTokenized`. A serial that was already tokenized blocks the submit button.
+- **Evidence hash helper.** **Hash evidence file** computes the SHA-256 of a file you pick, in your browser, and fills the proof hash field. Nothing is uploaded. A hash of all zeros is rejected, as the contract does.
+- **Confirmation.** You must tick that the serial and evidence belong to this credit and that minting is permanent. The page simulates the call first, so revert reasons (for example `Credit already tokenized`) appear before the wallet prompt, then sends `mintCredit` and shows the new NFT id and an explorer link.
+- A wallet on the wrong network, a paused contract or a wallet without the role keeps the form disabled.
+
+## Batch (CSV)
+
+Paste or upload CSV (or tab-separated text copied from a spreadsheet). Columns: `projectId, projectName, serialNumber, methodology, tonnes, vintageYear, geography, oracleProofHash, satelliteDataCID (optional), tokenURI`. **Download template** gives a header row and one example. Headers may be in any order; a file without a header is read in the order above.
+
+1. **Validation preview.** Every row is checked with the same rules as the single form and the contract. Rows are flagged for field errors, a serial repeated inside the file and a serial that is already tokenized onchain. The **Issue** button stays disabled until every row is valid: nothing is skipped silently.
+2. **Plan.** Rows are grouped by project ID (one `batchMint` call carries one project ID and one recipient) and split into transactions of **at most 25 credits**, because one credit costs about 0.5M gas and a transaction is limited to about 16.7M gas. The contract itself accepts up to 100.
+3. **Run.** Each transaction is simulated, pre-checked for already-tokenized serials, signed and confirmed in turn. Each shows its status (pending, awaiting wallet, confirming, confirmed, failed), the NFT ids and an explorer link.
+4. **Resume.** Confirmed transactions are saved in this browser under a hash of the recipient and the exact credits. After a rejection, a failure or a closed tab, paste the same CSV again and **Resume** continues from the first unconfirmed transaction. **Stop after current** pauses the run after the transaction in flight. Double issuance is impossible anyway: the contract rejects a serial that was already tokenized.
+
+## Recently issued credits
+
+Reads `CreditMinted` events (and `CreditBatchMinted` to mark batches) and enriches the newest 50 from `credits(tokenId)`: project, serial, methodology, tonnes, vintage, recipient, issuer and date, with badges for batch, retired and **no proof**. Filter by recipient address (an indexed event topic, so the node filters it) or use **My wallet**. If `NEXT_PUBLIC_DEPLOY_BLOCK` is not set, only a recent block window is scanned and the page says so.
+
+## Bond panel
+
+Shown only when `NEXT_PUBLIC_ISSUER_BOND` is set (CARB is not launched yet; without the variable the panel is absent). It is the app side of the optional [issuer bond](/docs/token/issuer-bond) path, which is an alternative to a direct grant by the multisig.
+
+| Item | Behaviour |
+| --- | --- |
+| Current bond and requirement | Your bonded CARB (`bonds(wallet)`) next to the minimum bond, and whether the bond path is open (`bondRequired`). |
+| **Bond** | `CarbToken.approve(bond, amount)` if needed, then `IssuerBond.bond(amount)`. Only works while the path is open. |
+| **Start unbonding** | `IssuerBond.startUnbond()`. The bond-granted `ISSUER_ROLE` is revoked immediately. |
+| **Withdraw** | `IssuerBond.withdraw()` after the unbond delay, and never while a slash proposal is active. |
+| Pending slash proposals | Proposals against your address with a countdown of the dispute window; you can dispute with an evidence hash before it ends. |
+
+<Callout type="warn" title="A bond is a deterrent, not verification">
+  Bonded CARB can be slashed and carries no votes. A bond does not prove that credits are real. A trusted issuer granted directly by the multisig needs no bond.
+</Callout>
+
+## Manage issuers (admin)
+
+Shown to `DEFAULT_ADMIN_ROLE` holders. Enter an address, see whether it currently holds the role and whether it is a contract, then **Grant ISSUER_ROLE** or **Revoke ISSUER_ROLE** (`grantRole` / `revokeRole`).
+
+<Callout type="warn" title="Use a multisig address">
+  On mainnet grant the role only to a multisig or smart-contract wallet. If the address has no contract code (a single key), the page warns and requires an explicit confirmation before granting. Revoking your own address removes your issuing rights but keeps your admin rights.
+</Callout>
+
+[Become an issuer](/docs/guides/issuer) · [CarbonCreditNFT reference](/docs/contracts/carbon-credit-nft) · [Roles and security](/docs/contracts/roles-and-security)

@@ -1,0 +1,102 @@
+---
+title: Staking and tiers
+description: How CARB staking works - warm-up, tiers, unstake and cooldown, the trading-fee discount as a share of the fee, and flash-stake protection. No rewards.
+---
+
+<Callout type="warn" title="CARB is not launched yet">
+  Numbers on this page marked "default" come from the deployment helper. The owner may change them before launch; exact parameters are published at launch.
+</Callout>
+
+Staking in `CarbStaking` is an **access mechanism**, not an income product. You lock CARB to qualify for a tier, and the tier lowers the marketplace fee you pay when you sell. Staking pays no rewards of any kind.
+
+## Lifecycle
+
+<Steps>
+<Step>
+
+### Stake
+
+`stake(amount)` moves CARB into the staking contract. The app first sends an `approve` transaction if the allowance is too low, then `stake` (no permit). The transfer must be exact: a token that delivers less than `amount` (fee-on-transfer) is rejected. New stake goes into a **pending** bucket.
+
+</Step>
+<Step>
+
+### Warm-up
+
+Only **matured** stake counts for your tier: pending stake that has aged at least the warm-up period (default 3 days; bounds 1 hour to 14 days; immutable). A top-up restarts the age of the pending bucket only; stake that already matured keeps its tier.
+
+</Step>
+<Step>
+
+### Unstake
+
+`unstake(amount)` lowers your tier **immediately** (pending stake is consumed first, then matured). It starts the cooldown (default 7 days; bounds 1 to 30 days; immutable). A further unstake restarts the cooldown for the whole cooling amount.
+
+</Step>
+<Step>
+
+### Withdraw
+
+After the cooldown, `withdraw()` returns the cooled CARB to your wallet. Unstaking the same tokens twice, or withdrawing twice, reverts.
+
+</Step>
+</Steps>
+
+No role can move, freeze or seize staked tokens, and there is no rescue function.
+
+## Tiers
+
+Tier 0 means no discount. Defaults in the deployment helper (the owner may change them before launch):
+
+| Tier | Matured stake needed (default) | Discount on the fee (default) |
+| --- | --- | --- |
+| 0 | below 1,000 CARB | 0 percent |
+| 1 | 1,000 CARB | 10 percent |
+| 2 | 5,000 CARB | 25 percent |
+| 3 | 25,000 CARB | 50 percent |
+
+Thresholds and discounts can be changed only through `PARAMETER_ROLE` (first the multisig, later governance; see [Governance](/docs/token/governance)). Onchain bounds: thresholds strictly increasing, from 1 to 50,000,000 **whole tokens** (scaled by the token's decimals; amounts onchain are base units); tier-0 discount is 0, discounts never decrease with tier and never exceed 5000 bps. The marketplace also clamps any discount at 50 percent of the fee, whatever a provider returns. The app reads the live values from the contract. Decimals are read once at deployment and used for display; any value from 0 to 24 works. See [Using an existing token](/docs/token/external-token).
+
+## How the discount is calculated
+
+The discount is a share **of the fee**, in basis points (5000 = half the fee is waived). It never touches the price.
+
+```text
+fee = amount * baseFeeBps * (10000 - discountBps) / (10000 * 10000)
+```
+
+Worked example in payment token base units (6 decimals), assuming a base fee of 25 bps (0.25 percent):
+
+| Item | Value |
+| --- | --- |
+| Sale of 1,000 payment token | `1,000,000,000` base units |
+| Fee without discount (25 bps) | `2,500,000` (2.50 payment token) |
+| Tier 2, 25 percent of the fee waived (`discountBps = 2500`) | `1,875,000` (1.875 payment token) |
+| Tier 3, 50 percent of the fee waived (`discountBps = 5000`) | `1,250,000` (1.25 payment token) |
+
+The seller still receives the full price minus the (lower) fee; the buyer pays the same price either way.
+
+Rules:
+
+- The fee is always paid by the **CCT seller**: the maker of a sell order, the taker of a buy order, the seller of an auction. **AMM swap fees are not discounted** (they stay with liquidity providers).
+- The discount is read at settlement from the seller's **current** tier. A seller who unstakes stops getting it on fills that happen afterwards.
+- It is applied to the fee snapshotted when the order or auction was created, so it can only lower the fee, never raise it. Later changes of the base fee do not touch open orders.
+- The marketplace reads the discount with a gas-limited call. A provider that reverts, runs out of gas or returns bad data means **no discount**; trading is never blocked.
+- The marketplace emits `FeeDiscountApplied(payer, discountBps, feeCharged)` when a discount applies.
+- Splitting stake across several addresses does not add up: the discount follows each address's own tier.
+
+## Flash-stake protection
+
+A warm-up period, not block snapshots, keeps the tier from being rented. Borrowing CARB, staking and trading inside one transaction or block yields no tier uplift (covered by a test that stakes and reads its tier in a single transaction).
+
+## No rewards, no votes
+
+Staking creates no reward, emission or yield. Staked CARB also carries **no voting power**: the staking contract delegates nowhere. Choosing a tier means giving up the votes of those tokens.
+
+## Related
+
+[CARB overview](/docs/token) · [Token page in the app](/docs/app/token) · [What CARB does not do](/docs/token/what-carb-does-not-do) · [Risks and legal](/docs/token/risks-and-legal)
+
+<Callout type="error" title="Legal notice">
+  Not investment advice. Not an offer or solicitation. May be restricted in your jurisdiction. No returns are promised. The contracts are unaudited. Get your own advice.
+</Callout>

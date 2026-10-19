@@ -1,0 +1,122 @@
+---
+title: RegistrySync
+description: Chainlink Functions client that checks serial numbers against operator-configured external carbon registry endpoints, as advisory input for issuers.
+---
+
+**Inherits:** `FunctionsConsumer` (itself `FunctionsClient` + `AccessControl`), `ReentrancyGuard`
+
+Asks external registries (Verra, Gold Standard, national registry, or any registry the admin adds) about a serial number and records the outcome. The contract knows no registry API: every endpoint is an `https://` URL template stored onchain by the admin.
+
+<Callout type="warn" title="Advisory only">
+`RegistrySync` is **not enforced onchain**. `CarbonCreditNFT.mintCredit` does not call it. It is an advisory oracle that an issuer (a trusted minting backend or multisig) must consult *before* issuing a credit that originates in an external registry, for example `require(isCreditVerified(registry, serial) && !isSerialUsed(registry, serial))`. Credits minted natively by `EmissionVerifier` do not originate in an external registry. On testnet the router is a mock that never fulfills requests, and a live setup needs a real router, DON id, funded subscription, an uploaded source and a configured endpoint. Check that Chainlink Functions is available on the target chain first.
+</Callout>
+
+## Semantics of an oracle answer
+
+Per registry and serial:
+
+| Answer | Meaning | Effect |
+| --- | --- | --- |
+| `NOT_FOUND` | Serial unknown at the source. A typo or a fabricated serial is never "cleared". | Not verified; any earlier verified / used flag is cleared. |
+| `ACTIVE` | The credit still circulates at the source: tokenizing it would double count. | Flagged as used (`registrySerials`), **not** verified. |
+| `RETIRED` | The credit exists and is retired / locked at the source. | Cleared for tokenization: `isCreditVerified == true`. |
+| oracle error / malformed | | Recorded as `ERROR`; no state change (fail closed: never verified). |
+
+The newest request wins: an answer to an older request for the same serial is recorded on the check but does not overwrite a newer verdict.
+
+## Constructor
+
+```solidity
+constructor(address functionsRouter_, address nftContract_)
+```
+
+`functionsRouter_` non-zero (`Invalid router`), `nftContract_` non-zero (`Invalid NFT contract`), stored as immutable `nftContract`. The deployer gets `DEFAULT_ADMIN_ROLE`, `VERIFIER_ROLE`, `ORACLE_ROLE` (the latter is not used by any function). `gasLimit` defaults to `300000`; `donId` and `subscriptionId` must be set with `setFunctionsConfig`, and the JavaScript with `setSource` (see the [Functions base](/docs/contracts/carbon-price-oracle#functions-base-functionsconsumer)).
+
+The constructor creates three default registries, `VERRA`, `GOLD_STANDARD` and `ICM`, **inactive and with an empty endpoint**. No registry API URL is hard-coded. Before `checkRegistry` works for one of them, the admin must call `setRegistryEndpoint(name, url)` and then `setRegistryStatus(name, true)`.
+
+## Data structures
+
+```solidity
+struct RegistryCheck {
+    bytes32 requestId; string registry; string serialNumber; address requester;
+    uint256 requestTime; bool fulfilled; bool existsInRegistry;
+    string registryStatus;    // "ACTIVE", "RETIRED", "NOT_FOUND", "ERROR"
+    bytes32 registryProofHash;
+}
+
+struct Registry {
+    string name; string apiEndpoint; bool isActive;
+    uint256 checksPerformed; uint256 duplicatesFound;
+}
+```
+
+State: `registryChecks`, `registries`, `registrySerials[registry][serial]` (credit **still ACTIVE** at the source), `verifiedCredits[keccak256(abi.encode(registry, serial))]` (credit **RETIRED** at the source), `registryList`. Limits: `MAX_BATCH_SIZE` 20, `MAX_SERIAL_LENGTH` 128.
+
+## Request and response
+
+Arguments are built onchain:
+
+| Argument | Value |
+| --- | --- |
+| `args[0]` | registry name |
+| `args[1]` | serial number |
+| `args[2]` | the registry's `apiEndpoint`: an `https://` URL template containing `{serial}` |
+
+The endpoint is expected to answer HTTP 404 for an unknown serial and otherwise HTTP 200 with JSON `{ "status": "ACTIVE" | "RETIRED" }` (see `contracts/scripts/functions/README.md`).
+
+The DON must answer with exactly **32 bytes**, `abi.encode(uint256 status)`:
+
+| `status` | Meaning |
+| --- | --- |
+| `0` | `NOT_FOUND` |
+| `1` | `ACTIVE` |
+| `2` | `RETIRED` |
+
+Any other value, another length or error bytes is recorded as `ERROR` and changes no verdict. The old `exists * 256 + status` format is no longer accepted.
+
+## Functions
+
+| Function | Access | Behavior |
+| --- | --- | --- |
+| `checkRegistry(registry, serialNumber)` returns `requestId` | `VERIFIER_ROLE`, `nonReentrant` | Sends a Functions request, stores a `RegistryCheck` (requester = caller), increments `checksPerformed`, emits `RegistryCheckRequested`. Reverts `Registry not supported` (inactive or unknown) or `Invalid serial number` (empty or longer than 128 bytes). |
+| `batchCheckRegistry(registry, serialNumbers)` returns `bytes32[]` | `VERIFIER_ROLE`, `nonReentrant` | 1 to 20 serials (`Invalid batch size`); the caller is the recorded requester. |
+| `isCreditVerified(registry, serialNumber)` | view | `true` only if the serial was found RETIRED at the source |
+| `isSerialUsed(registry, serialNumber)` | view | `nftContract.isSerialTokenized(registry, serial)` OR the external cache `registrySerials` (still ACTIVE at the source) |
+| `addRegistry(name, apiEndpoint)` | `DEFAULT_ADMIN_ROLE` | Adds an **active** registry. Validates the endpoint (`https://`, contains `{serial}`). Reverts `Invalid registry name`, `Registry exists`, `Endpoint needs {serial}`. Emits `RegistryAdded`. |
+| `setRegistryEndpoint(name, apiEndpoint)` | admin | Sets or replaces the endpoint of an existing registry without changing its active flag. Reverts `Unknown registry`, `Endpoint needs {serial}`. Emits `RegistryEndpointUpdated`. |
+| `setRegistryStatus(name, isActive)` | admin | Toggles a registry (`Unknown registry`). Activating reverts `Endpoint not set` until an endpoint exists. Emits `RegistryStatusChanged`. |
+| `setFunctionsConfig(donId_, subscriptionId_, gasLimit_)` | admin | Gas limit 200,000 to 1,000,000; emits `FunctionsConfigUpdated` |
+| `setSource(newSource)` | admin | 1 to 16,000 bytes; emits `SourceUpdated(sourceHash, length)` |
+| `setDONHostedSecrets(slotId, version)` | admin | `version = 0` detaches secrets; emits `DONHostedSecretsUpdated` |
+| `getRegistryCheck(requestId)`, `getRegistry(name)`, `getSupportedRegistries()`, `getRegistryStats(name)` | view | Stored data; stats returns `(checksPerformed, duplicatesFound, isActive)` |
+
+Endpoint failures also surface the shared URL checks `Invalid URL length` and `URL must be https`.
+
+<Callout>
+Registry names here (`VERRA`, `GOLD_STANDARD`, `ICM`) differ from the NFT's methodology strings (`VERRA_VCS`, ...). The NFT's `isSerialTokenized` ignores its methodology/registry argument and checks the canonical serial only, so `isSerialUsed` reflects "this serial was tokenized on Carbonized" regardless of the first argument.
+</Callout>
+
+## Fulfillment (router callback)
+
+- Reverts `Unknown request` or `Request already fulfilled`.
+- On `err`, a response that is not 32 bytes, or a status above 2: marks the check fulfilled with status `ERROR` and changes no verdict.
+- Otherwise stores the status and `registryProofHash = keccak256(response)`. It applies the verdict unless a newer request already decided the credit: ACTIVE sets `registrySerials`, increments `duplicatesFound` and emits `DuplicateCreditDetected`; RETIRED sets `verifiedCredits` and emits `CreditVerified`; a verdict change from verified to not-verified emits `CreditVerificationRevoked`.
+- Emits `RegistryCheckFulfilled`.
+
+## Events
+
+| Event | Parameters |
+| --- | --- |
+| `RegistryCheckRequested` | `bytes32 indexed requestId, string indexed registry, string serialNumber` |
+| `RegistryCheckFulfilled` | `bytes32 indexed requestId, string indexed registry, string serialNumber, bool existsInRegistry, string status` |
+| `DuplicateCreditDetected` | `string indexed registry, string serialNumber, address requester` |
+| `RegistryAdded` | `string indexed registry, string apiEndpoint` |
+| `RegistryEndpointUpdated` | `string indexed registry, string apiEndpoint` |
+| `RegistryStatusChanged` | `string indexed registry, bool isActive` |
+| `CreditVerified` | `bytes32 indexed creditHash, string registry, string serialNumber` |
+| `CreditVerificationRevoked` | `bytes32 indexed creditHash, string registry, string serialNumber` |
+| `FunctionsConfigUpdated` | `bytes32 donId, uint64 subscriptionId, uint32 gasLimit` |
+| `SourceUpdated` | `bytes32 indexed sourceHash, uint256 length` |
+| `DONHostedSecretsUpdated` | `uint8 slotId, uint64 version` |
+
+`SourceCodeUpdated` and `updateSourceCode` were removed with the oracle rewrite; see [Events & ABIs](/docs/contracts/events-and-abis#oracle-rewrite-chainlink-functions).

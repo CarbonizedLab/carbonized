@@ -1,0 +1,55 @@
+---
+title: Credit assessment
+description: ISO 14064 readiness checklist, credits by registry standard and the surplus allocation calculator.
+---
+
+Route: `/app/assess`. Combines your onchain NFT credits with the emission inventory from the
+[Emissions tracker](/docs/app/emissions) to plan how many tonnes to retire, reserve and sell. It
+sends no transactions.
+
+## ISO 14064 readiness
+
+A self-assessment checklist, saved in `localStorage` per wallet (`carb-iso14064:v1:<wallet>`).
+It is **not** a certification.
+
+| Step | Completion rule |
+| --- | --- |
+| Inventory boundary defined | Checkbox |
+| Base year set | Checkbox **and** a four-digit year between 1990 and the current year |
+| Emission sources quantified | Detected automatically when the tracker has records for the selected year |
+| Data quality and uncertainty documented | Checkbox |
+| GHG inventory report prepared | Checkbox |
+| Verified by a third party | Checkbox **and** auditor name, verification date and a document hash (`0x` + 64 hex characters, or an IPFS CID `Qm…` / `bafy…`) |
+
+Ticked items with missing details show inline errors and do not count towards progress. The badge
+turns to **Ready for verification** once all six steps are complete.
+
+## Credits by registry standard
+
+`getUserCredits(address)` reads every NFT you own and groups them by methodology (`VERRA_VCS`,
+`GOLD_STANDARD`, `ICM_COMPLIANCE`). For each standard it shows the credit count, **eligible**
+tonnes (not retired) and **retired** tonnes.
+
+## Surplus allocation calculator
+
+Let `E` be the year's emissions from the tracker and `C` the eligible (non-retired) NFT tonnes.
+
+| Result | Formula |
+| --- | --- |
+| Internal offset (retire to offset) | `min(C, E)` |
+| Shortfall | `max(0, E − C)` |
+| Surplus | `max(0, C − E)` |
+| Reserve | `surplus × slider %` |
+| Sellable surplus | `surplus − reserve` |
+| Offset coverage | `min(C, E) / E` (shown as `—` when `E = 0`) |
+
+The slider reserves a share of the surplus for future years or as a buffer. A donut chart shows
+the split with the coverage in the centre, and a stacked bar compares emissions with credits.
+
+Next steps from the calculator: **Retire credits** (`/app/carbon-wallet`), **Tokenize / wrap**
+(`/app/tokenize`) and **Sell surplus** (`/app/sell-credits`).
+
+<Callout type="info" title="Planning only">
+  The calculator does not retire, wrap or sell anything. It uses your connected wallet's NFTs only,
+  so credits already wrapped into pooled tokens are not counted as eligible.
+</Callout>

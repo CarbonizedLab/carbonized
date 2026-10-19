@@ -1,0 +1,98 @@
+---
+title: "Carbonized's Testnet Launch on Robinhood Chain: What Works and What Is Still Mocked"
+description: "An honest status report on Carbonized's testnet deployment: what is real contract logic, what is a mock, what has not been audited, and what has to happen before anyone should trust it with value."
+date: 2026-10-12
+tags: ['carbonized', 'testnet', 'robinhood-chain', 'roadmap']
+image: /images/blog/carb-testnet-launch-robinhood-chain.jpg
+imageCredit: "Photo: Ilya Pavlov / Wikimedia Commons / Unsplash (CC0) — https://commons.wikimedia.org/wiki/File:Colorful_lines_of_code_(Unsplash).jpg"
+author: Carbonized
+---
+
+**TL;DR:** Carbonized is deployed on Robinhood Chain Testnet. The core contracts for minting, wrapping, trading and retiring credits work as written. The oracle layer, the payment token and several demo features are mocks, nothing is audited, and nothing on the testnet has monetary value. This is a prototype for learning and feedback, not a product.
+
+> **Update (Oct 2026):** this post describes the original testnet deployment, and we have left it as written. Since then the contracts were revised after an internal security review, and the sentences below about 18-decimal USDC and demonstration credits no longer describe the current code. The marketplace now reads the payment token's `decimals()` and quotes prices in payment-token base units per tonne, so it is built for Robinhood Chain mainnet's real 6-decimal USDC (CCT stays at 18 decimals). The registry no longer mints any starter or "demonstration" credits, and the NFT has no public mint path: only an issuer role can create credits. Company contact details are no longer onchain (only a salted hash), unclaimable refunds fall back to a `claim()` pull payment, and the marketplace has a fee-withdrawal function. The contracts are still **unaudited**, the oracle layer is still mocked on testnet, and credits are "issued by an authorized issuer", not independently verified. See [Robinhood Chain Mainnet](/docs/deployment/robinhood-mainnet) and the [roadmap](/docs/roadmap).
+
+Carbonized is built by a small team, and we would rather you hear from us what is unfinished than discover it yourself. This post is a plain-language status report.
+
+## Why a testnet, and why this chain
+
+A carbon marketplace needs transparent records, cheap transactions and settlement that anyone can inspect. Public EVM chains provide that, and L2-style networks keep fees low enough for small retirements and frequent trading to be practical. Low fees matter more than they sound: if each mint, wrap or retirement costs several dollars of gas, small participants are priced out.
+
+Robinhood Chain Testnet is an EVM network with chain id 46630, an explorer and a faucet. It gave us a free place to deploy, test with real wallet flows, and let others try the whole path without risk. Using a testnet also means I cannot say anything about how mainnet fees or reliability will look; fees on a testnet are not a forecast. Network details and the deployment steps are in the [Robinhood testnet guide](/docs/deployment/robinhood-testnet) and [networks page](/docs/wallet/networks).
+
+## What actually works
+
+These parts are real contract logic running on the testnet:
+
+- **Credit NFTs.** An authorised issuer can mint ERC-721 credits with project, methodology, vintage, tonnes and serial number. A serial number cannot be tokenized twice. See [CarbonCreditNFT](/docs/contracts/carbon-credit-nft).
+- **Wrapping.** Credits can be locked and wrapped one-to-one into methodology-specific ERC-20 tokens, and unwrapped again. See [CarbonCreditToken](/docs/contracts/carbon-credit-token) and the [NFT vs ERC-20 post](/blog/nft-vs-erc20-carbon-credits).
+- **Trading.** The marketplace supports buy and sell orders, auctions and an AMM pool in the contract, with a 0.25 percent default fee. See [CarbonMarketplace](/docs/contracts/carbon-marketplace) and [auctions vs order books](/blog/auctions-vs-order-books-for-carbon-credits).
+- **Retirement and certificates.** Retiring burns the NFT, stores a certificate, and the app can rebuild and verify that certificate from chain events. See [retirement](/blog/retirement-is-the-point).
+- **Audit view.** The audit page reads events and checks them against contract counters.
+- **Emissions tools.** The emissions tracker and assessment page work in the browser. Emissions records stay in your browser storage. See the [emissions tracker docs](/docs/app/emissions).
+
+## What is mocked or simplified
+
+This is the important section.
+
+### The payment token
+
+USDC on the testnet is a mock token with an open mint function (at launch it had 18 decimals). It is not real USDC and has no value. At launch the marketplace math assumed both tokens shared the same scale, so a real six-decimal USDC would have needed review; that is the part the October update above addresses.
+
+### The oracle layer
+
+Carbonized's design uses Chainlink Functions to fetch emission data, check registries and aggregate prices. On this testnet, the Functions router is a **mock that never calls back**. In practice:
+
+- No verification request completes, so no credits are minted automatically from verified emissions data.
+- No price is stored by the price oracle.
+- The registry-sync check is advisory in any case, since the credit contract does not require it before minting.
+
+Several parts of the oracle code also contain placeholders, such as a constant confidence score and a fixed geography. They are marked as such in the source and in the [EmissionVerifier docs](/docs/contracts/emission-verifier). I list this explicitly because "oracle-verified" would otherwise sound much stronger than the current reality.
+
+### How credits get minted today
+
+In the reference deployment, minting is a permissioned action: an account with the issuer role mints. The contract requires a non-zero oracle proof hash but does not validate it against an oracle, so the trust anchor is the issuer. At launch, registration also handed new users a few demonstration credits with no verification and no sybil protection; that faucet has since been removed (see the update above). Any such credits were test objects, not real carbon.
+
+### Demo data in the interface
+
+Some dashboard charts, trader statistics and portfolio figures are demonstration data. The documentation says which, page by page, starting from the [dashboard page](/docs/app/dashboard).
+
+### Backend depository
+
+The app has an optional backend ledger that can mark credits retired. That is a database flag, not an onchain retirement. The [retire credits guide](/docs/guides/retire-credits) explains the difference.
+
+## What has not happened
+
+- **No third-party security audit.** The contracts have not been audited. Do not use them with real funds.
+- **No real credits.** Nothing on Carbonized is backed by an actual project, a registry entry, or a legal claim.
+- **No regulatory review.** Carbonized is not connected to any national registry and is not a licensed venue. Any future work touching compliance instruments, such as those in [China's ETS or CCER](/blog/chinas-carbon-market-ets-vs-ccer), would need proper legal advice and regulator engagement.
+- **No mainnet.** There are no plans we would call concrete until the items below are done.
+
+## Known rough edges
+
+A few that we know about and will say out loud:
+
+- Auction rules lack a minimum bid increment and a late-bid extension.
+- Orders do not auto-match each other.
+- Trading fees originally stayed in the marketplace contract with no withdrawal path (a fee-manager withdrawal now exists in the revised contracts).
+- Some frontend contract calls do not match the contract signatures, listed in the [events and ABIs reference](/docs/contracts/events-and-abis).
+- Pool tokens mix vintages within a methodology.
+
+## What would have to be true for a real launch
+
+1. A professional security audit and fixes.
+2. A real oracle network, with registry checks that are mandatory rather than advisory, and a verification process that does not rest on a single issuer key.
+3. A real payment asset with proper decimals handling.
+4. Partnerships or integrations with recognised standards bodies for the credits themselves.
+5. Legal and regulatory clarity in the markets we intend to serve, starting with China.
+6. A governance and key-management plan beyond one founder's wallet.
+
+That list is long, and we do not think it can be shortened by marketing.
+
+## How you can help
+
+Try the flow end to end: connect a wallet, get test gas and mock USDC, get credits from an issuer or buy them, wrap, trade, and retire. Follow the [quickstart](/docs/quickstart). Then tell me what confuses you, what breaks, and what the documentation fails to explain. The [troubleshooting page](/docs/troubleshooting) lists known issues. Reports about edge cases in the contracts are the most valuable.
+
+## Takeaway
+
+Carbonized today is an honest sandbox. The token mechanics and transparency features are real and inspectable; the verification and price layers are stand-ins; the whole thing is unaudited. If you treat it as a working model for how an onchain carbon registry could behave, it is useful. If you treat it as a market, it is not ready, and I would rather say that now than later.

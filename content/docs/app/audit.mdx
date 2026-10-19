@@ -1,0 +1,63 @@
+---
+title: Audit & ESG
+description: Live onchain transaction ledger, three-way reconciliation, CSV export and a printable audit report.
+---
+
+Route: `/app/audit`. Reads every Carbonized event straight from the chain and checks it against the
+contracts' own counters. It sends no transactions and needs no wallet.
+
+## KPI cards
+
+| Card | Source |
+| --- | --- |
+| Transactions | Distinct transaction hashes among the decoded events |
+| Chain head (finality) | Latest block number at load time; the card also shows the first scanned block |
+| Last activity block | Block (and time) of the newest decoded event |
+| Reconciliation | How many of the checks below match |
+
+## Three-way reconciliation
+
+Event totals are recomputed from the log on every load and compared with values read from the
+contracts **at the same block** the scan stops at, so a transaction landing mid-load cannot cause a
+false mismatch. Each check shows *expected*, *actual*, the *delta* and **MATCH** or **MISMATCH**.
+
+| Group | Checks |
+| --- | --- |
+| **A · Credit NFT** | Minted tonnes (`CreditMinted` + `CreditBatchMinted`) vs `totalMintedTonnes()`; retired tonnes vs `totalRetiredTonnes()`; net active tonnes; active credit count vs `totalActiveCredits()` |
+| **B · CCT token** | Wrapped − unwrapped events (`CreditWrapped`, `BatchWrapped`, `CreditUnwrapped`) vs `totalSupply()`; locked NFT count vs `totalNFTsWrapped()`; 1:1 backing (`totalTonnesWrapped()` vs `totalSupply()`); NFTs held by the token contract vs `totalNFTsWrapped()` |
+| **C · Marketplace** | CCT escrow = open sell orders + live auctions + AMM reserve vs the marketplace's CCT balance; payment token escrow (open buy orders + highest bids + AMM reserve) must be **≤** the payment token balance, the surplus being accrued fees; order and auction event counts vs `nextOrderId − 1` / `nextAuctionId − 1` |
+
+The token checks cover the CCT contract configured in `NEXT_PUBLIC_CARBON_CREDIT_TOKEN` (the pool
+the marketplace trades). Escrow checks read the newest 400 orders and 400 auctions; a note appears
+when older ones were skipped.
+
+### Event window
+
+Events are scanned from `NEXT_PUBLIC_DEPLOY_BLOCK`. **If it is not set only the last 20,000 blocks
+are scanned**, so checks marked *depends on event window* can show a false MISMATCH because older
+events are missing; the page shows an explicit warning in that case. Set the variable to the block
+in which the NFT contract was deployed to audit the full history. Checks that read only onchain
+state (backing, locked NFTs, escrow) do not depend on the window.
+
+## Ledger
+
+All 11 event kinds (mint, retire, wrap, unwrap, order created/filled/cancelled, auction
+created/finalized/cancelled, bid), newest first, 15 per page. Filter by **type**, **actor address**
+(substring) and **date range**. Every row links to
+`https://explorer.testnet.chain.robinhood.com/tx/<hash>` (override with `NEXT_PUBLIC_EXPLORER_URL`).
+
+## Export
+
+| Button | Output |
+| --- | --- |
+| **Export CSV** | The *filtered* ledger: UTC time, block, log index, type, contract, actor, token ids, ref id, tonnes, USD, note, tx hash, explorer URL. Cells starting with `=`, `+`, `-` or `@` are prefixed with `'` so spreadsheets do not run them as formulas. |
+| **Download PDF** | Opens the browser print dialog (`window.print()`) with a dedicated report: summary, contract addresses, the reconciliation table and the filtered ledger (newest 250 rows). Choose *Save as PDF*. No PDF library is used. |
+
+## States
+
+| State | Behaviour |
+| --- | --- |
+| Contracts not configured | Empty state asking for `NEXT_PUBLIC_CARBON_CREDIT_NFT` |
+| Loading | Skeleton cards and tables |
+| RPC error | Error alert with **Try again** |
+| Some reads failed | Amber alert listing the failing contracts; other checks still render |

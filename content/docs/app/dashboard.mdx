@@ -1,0 +1,83 @@
+---
+title: Dashboard
+description: Operations dashboard at /app — network KPIs, wallet position, compliance readiness, offset progress and recent onchain activity.
+---
+
+Route: `/app`. A read-only operations dashboard driven by onchain reads and events. It sends no transactions. The page is available in English and Chinese (language toggle in the top bar).
+
+## KPIs
+
+**Network** (works without a wallet)
+
+| Card | Source |
+| --- | --- |
+| Tonnes minted / retired | `CarbonCreditNFT.getGlobalStats()` (all-time totals) |
+| Wrapped supply | Sum of `totalSupply()` over the configured CCT pools |
+| Active orders (+ live auctions) | Marketplace orders and auctions found in the last 20,000 blocks, filtered to active, unfilled, unexpired / not yet ended |
+
+**Your position** (needs a connected wallet)
+
+| Card | Source |
+| --- | --- |
+| Market price | `CarbonPriceOracle.getLatestPrice("VERRA_VCS")` (the oracle function takes a methodology string). An *indicative* value only. The card is labelled **Oracle** when the price came from a Chainlink Functions request and **Manual report** when `lastPriceManual("VERRA_VCS")` is true (a price posted by an `ORACLE_REPORTER_ROLE` holder with `reportPrice`). When the oracle has no fresh price (for example on testnet, where the Functions router is a mock, or before the Functions sources are configured) the card shows the fallback estimate of `$18.50` and says so. |
+| NFT credits | Unretired credits owned by the wallet (count and tonnes). Wrapped credits are held by the CCT contract, retired credits are burned. |
+| CCT balance | `balanceOf` per pool, with a per-methodology breakdown |
+| payment token balance | `balanceOf` on the payment token, formatted with the token's `decimals()` read from the chain (6 for real payment token) |
+
+## Compliance readiness
+
+A score out of 100 for the connected wallet, with a checklist of what is missing. Each signal is real onchain data:
+
+| Signal | Weight |
+| --- | --- |
+| Wallet connected | 10 |
+| Registered company or trader in `CarbonRegistry` | 20 |
+| KYB verified | 20 |
+| Holds NFT credits or CCT | 15 |
+| Emissions recorded onchain (companies) | 15 |
+| Offset coverage: retired tonnes ÷ emissions, capped at 100% (companies) | 20 |
+
+Traders are not scored on emissions or offsetting; their score is normalised over the remaining signals.
+
+## Charts and tables
+
+| Element | Source |
+| --- | --- |
+| **Minted vs retired** | Last 8 rolling weeks of `CreditMinted` / `CreditRetired` events, bucketed by block timestamp |
+| **Offset progress** ring | Wallet's `userRetiredTonnes` vs `getCompanyEmissions` (Scope 1+2+3). Without a company profile or emissions it shows a call to action instead. |
+| **Batches needing action** | Wallet's unwrapped, unretired NFT credits, with Wrap (`/app/tokenize`), Sell (`/app/sell-credits`) and Retire (`/app/carbon-wallet`) actions |
+| **Price trend** | Oracle or manual-report prices when available (the oracle stores no onchain history array; history is the `PriceUpdated` event log); otherwise prices implied by order events; otherwise an illustrative series badged **Demo** |
+| **Trading volume** | USD per day over 7 days from `OrderFilled` events |
+| **Recent activity** | Latest events across NFT, CCT and marketplace contracts with explorer links; your own events are tagged |
+
+<Callout type="info" title="Event window">
+  Event-based charts scan from `NEXT_PUBLIC_DEPLOY_BLOCK` when set, otherwise only the last 20,000
+  blocks. Set it to the block of your first deployment to see full history. All-time KPI totals
+  do not depend on it.
+</Callout>
+
+## About the price source
+
+`CarbonPriceOracle` is a Chainlink Functions consumer. An admin uploads the JavaScript source with `setSource` and the operator-chosen price endpoints with `setPriceSources` (1 to 5 sources); the DON returns the median price, and the contract checks bounds and confidence. If Functions is not available or not configured, a multisig-held `ORACLE_REPORTER_ROLE` can post a price manually with `reportPrice` (age, bounds, spacing and deviation checks apply). The card label tells you which path produced the current price. See [CarbonPriceOracle](/docs/contracts/carbon-price-oracle).
+
+## Refresh
+
+Data reloads every 30 seconds while the tab is visible, and on demand with the **Sync data** button (shows a spinner while loading). Failures of individual reads appear in an alert on the page; the rest of the dashboard keeps working.
+
+## States
+
+| State | Behaviour |
+| --- | --- |
+| Wallet not connected | Network KPIs, charts and activity still load. Position cards, batches and offset show a connect prompt. |
+| Loading | Skeletons replace cards, charts and tables. |
+| Contracts not configured | A red alert lists the missing NFT or marketplace address. |
+| Partial failure | An alert lists the failing reads; affected cards show `Unavailable`. |
+
+## Optional environment
+
+`NEXT_PUBLIC_CARBON_CREDIT_TOKEN_ICM_COMPLIANCE` and `NEXT_PUBLIC_CARBON_CREDIT_TOKEN_GOLD_STANDARD` add the other two CCT pools to the wrapped supply and balance KPIs. The VERRA_VCS pool comes from `NEXT_PUBLIC_CARBON_CREDIT_TOKEN`.
+
+## Related
+
+- [Marketplace](/docs/app/marketplace) for the orders behind the counters.
+- [Environment variables](/docs/deployment/environment-variables) for the addresses the alert checks.

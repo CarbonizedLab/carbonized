@@ -1,0 +1,129 @@
+---
+title: CarbonCreditToken (CCT)
+description: ERC-20 wrapper that locks carbon credit NFTs of one methodology and mints fungible tokens 1:1 by tonnes.
+---
+
+**Inherits:** `ERC20`, `AccessControl`, `Pausable`, `ReentrancyGuard`
+**Decimals:** 18 (hard-coded). 1 CCT (`1e18`) = 1 tonne of CO2.
+
+One instance is deployed **per methodology**. It only accepts NFTs whose `methodology` string equals its own.
+
+## Backing invariants
+
+- `totalSupply() == totalTonnesWrapped` at all times. The token is **not burnable by holders** (no `ERC20Burnable`): CCT is only minted by wrapping and only burned by unwrapping, so a stray burn cannot break the 1:1 backing.
+- **Pool homogeneity.** Only fully issued credits can be wrapped: non-empty registry serial, non-zero oracle proof hash, matching methodology, not retired. Within a pool, credits are treated as fungible per tonne (vintage and project may differ), so a junk credit cannot be swapped for a better one.
+- **Redemption is O(1).** Wrapped NFTs are tracked explicitly in per-tonnes buckets, with no scan of NFT ids.
+
+## Constructor
+
+```solidity
+constructor(string name_, string symbol_, address nftContract_, string methodology_)
+```
+
+| Parameter | Meaning |
+| --- | --- |
+| `name_`, `symbol_` | ERC-20 metadata |
+| `nftContract_` | `CarbonCreditNFT` address (reverts `Invalid NFT contract` if zero). Stored as immutable `nftContract`. |
+| `methodology_` | Methodology filter, e.g. `VERRA_VCS` (`Methodology required` if empty) |
+
+The deployer gets `DEFAULT_ADMIN_ROLE`, `WRAPPER_ROLE` and `PAUSER_ROLE`. On mainnet, grant `DEFAULT_ADMIN_ROLE` and `PAUSER_ROLE` to a multisig and renounce the deployer's.
+
+Deployed instances on Robinhood Chain Testnet:
+
+| Symbol | Name | Methodology |
+| --- | --- | --- |
+| `CCT-ICM` | Carbon Credit Token - National registry (compliance) | `ICM_COMPLIANCE` |
+| `CCT-VCS` | Carbon Credit Token - Verra | `VERRA_VCS` |
+| `CCT-GS` | Carbon Credit Token - Gold Standard | `GOLD_STANDARD` |
+
+The marketplace and the app trade `CCT-VCS` only.
+
+## State
+
+| Name | Type | Meaning |
+| --- | --- | --- |
+| `nftContract` | `CarbonCreditNFT` (immutable) | Underlying NFT |
+| `methodology` | `string` | Accepted methodology |
+| `wrappedNFTs` | `mapping(uint256 => bool)` | Token id currently locked here |
+| `wrappedTonnes` | `mapping(uint256 => uint256)` | Tonnes (18 decimals) locked for each wrapped NFT |
+| `wrapperOf` | `mapping(uint256 => address)` | Original wrapper of each locked NFT |
+| `totalNFTsWrapped` | `uint256` | Count of locked NFTs |
+| `totalTonnesWrapped` | `uint256` | Sum of locked `co2Tonnes` (18 decimals) |
+| `MAX_BATCH_WRAP` | constant | 50 |
+
+`WRAPPER_ROLE` is defined and granted but **no function checks it**: wrapping is permissionless for owners of eligible credits. It is kept only for deployment-script compatibility.
+
+## Functions
+
+### `wrapCredit(uint256 tokenId)` returns `uint256 tonnesMinted`
+
+`whenNotPaused`, `nonReentrant`. The caller must own the NFT **and have approved this contract** (`approve` or `setApprovalForAll` on the NFT).
+
+| Message | Condition |
+| --- | --- |
+| `Not NFT owner` | `ownerOf(tokenId) != msg.sender` |
+| `Already wrapped` | `wrappedNFTs[tokenId]` |
+| `Methodology mismatch` | NFT methodology differs from `methodology` |
+| `Cannot wrap retired credit` | `isRetired` |
+| `Empty credit` | zero tonnes |
+| `Unverified credit` | empty serial number or zero oracle proof hash |
+
+The checks run in the order listed. The web app reproduces the methodology, retired, zero-tonnes, serial and proof checks with read-only calls before sending a transaction (see [Tokenize](/docs/app/tokenize#why-a-credit-cannot-be-wrapped)); the contract remains the authority.
+
+Transfers the NFT to the contract, records it, mints `co2Tonnes` CCT to the caller, emits `CreditWrapped(user, tokenId, tonnes)`.
+
+### `batchWrap(uint256[] tokenIds)` returns `uint256 totalMinted`
+
+Same checks per id, 1 to 50 ids (`Invalid batch size`). Mints the sum in one `_mint`; emits `BatchWrapped(user, tokenIds, totalTonnes)` (no per-token `CreditWrapped`).
+
+### `unwrapCredit(uint256 tokenId)` returns `uint256 tonnesBurned`
+
+`nonReentrant`. **Any** holder with enough CCT can unwrap **any** locked NFT of this pool; the caller does not have to be the original wrapper.
+
+| Message | Condition |
+| --- | --- |
+| `NFT not wrapped` | `!wrappedNFTs[tokenId]` |
+| `Insufficient CCT balance` | balance below the NFT's tonnes |
+
+Burns the NFT's tonnes in CCT, removes the NFT from the tracking structures (the **original wrapper's** list, not the caller's), updates totals, sends the NFT to the caller, emits `CreditUnwrapped`.
+
+### `unwrapAny(uint256 amount)` returns `uint256 tokenId`
+
+`nonReentrant`. For users who bought CCT on the market. Redeems the most recently wrapped NFT whose tonnes equal `amount` **exactly** (O(1) bucket lookup).
+
+| Message | Condition |
+| --- | --- |
+| `Invalid amount` | `amount == 0` |
+| `Insufficient balance` | balance below `amount` |
+| `No NFTs available` | `totalNFTsWrapped == 0` |
+| `No matching NFT found` | no locked NFT with exactly that amount |
+
+Burns `amount`, sends the NFT, emits `CreditUnwrapped`. `wrappedCountByTonnes(amount)` tells how many NFTs of that size are available.
+
+Pausing blocks wrapping directly. Because every CCT mint/burn/transfer passes `_beforeTokenTransfer` (`whenNotPaused`), unwrapping and all transfers also revert while paused.
+
+## Views
+
+| Function | Returns |
+| --- | --- |
+| `getUserWrappedNFTs(user)` | `uint256[]` the user wrapped and that are still locked |
+| `wrappedCountByTonnes(amount)` | number of locked NFTs available for `unwrapAny(amount)` |
+| `getBackingInfo()` | `(nftsLocked, tonnesLocked, tokensCirculating)` = `(totalNFTsWrapped, totalTonnesWrapped, totalSupply())` |
+| `isFullyBacked()` | `totalSupply() == totalTonnesWrapped` |
+| `decimals()` | `18` |
+
+## Admin
+
+| Function | Role |
+| --- | --- |
+| `pause()` / `unpause()` | `PAUSER_ROLE` |
+
+## Events
+
+| Event | Parameters |
+| --- | --- |
+| `CreditWrapped` | `address indexed user, uint256 indexed tokenId, uint256 co2Tonnes` |
+| `CreditUnwrapped` | `address indexed user, uint256 indexed tokenId, uint256 co2Tonnes` |
+| `BatchWrapped` | `address indexed user, uint256[] tokenIds, uint256 totalTonnes` |
+
+Plus ERC-20 `Transfer` / `Approval`.

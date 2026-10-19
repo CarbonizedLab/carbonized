@@ -1,0 +1,56 @@
+---
+title: Settings
+description: KYB checklist with locally computed document hashes, onchain verification status, wallet, organization profile and language.
+---
+
+Route: `/app/settings`. Language and the contract list work without a wallet; everything else needs
+a connected wallet.
+
+## Onchain verification
+
+Shows whether your **company** has been KYB-reviewed in the `CarbonRegistry` (read with `getCompanyData`):
+*KYB verified*, or *Awaiting verification* with the registration date. Traders are told that KYB
+applies to companies. A KYB approval covers exactly the profile that the verifier reviewed
+(`profileHashOf`); if you later change your name, legal ID, contact details or emissions, the
+verified flag is reset and you need a new review.
+
+If the connected wallet holds `VERIFIER_ROLE` on the registry, a **Verifier tools** box appears:
+enter a company address, **Look up** its profile (name, legal ID, contact commitment hash, profile hash) and
+**Mark as verified** or **Revoke verification** (`setCompanyVerified(company, verified, expectedProfileHash)`).
+Approval is bound to the profile hash you looked at: if the company edits its profile in the
+meantime the transaction is rejected (`Profile changed`) and you must review again. A legal ID can be
+verified for one wallet only (`Legal ID already verified`). Other wallets never see this box, and
+the contract rejects the call without the role.
+
+## KYB checklist
+
+Four documents: business registration (NIB or equivalent), tax ID (NPWP or equivalent), deed /
+articles of incorporation, and directors / beneficial owners.
+
+<Callout type="warn" title="Nothing is uploaded">
+  Choosing a file computes its **SHA-256** in your browser with `crypto.subtle` (HTTPS or
+  localhost). Only the file name, size, hash and time are stored, in `localStorage` under
+  `carb-kyb:<wallet>`. The file itself is never stored or sent anywhere. The hash is stored
+  locally; use **Download hashes (JSON)** and submit it to a verifier, who can ask you for the
+  originals and compare. Files above 25 MB are rejected.
+</Callout>
+
+Each row shows *Hash stored locally* or *Not provided*, the full hash with a copy button, and
+**Replace** / **Remove**. A progress bar counts hashed documents. The checklist is local
+bookkeeping: completing it does not verify your company onchain.
+
+## Wallet
+
+Address (copy and explorer link, using the configured explorer), connected network (a warning appears when it differs from
+`NEXT_PUBLIC_CHAIN_ID`), native balance and payment token balance (formatted with the token's `decimals()`).
+
+## Organization profile
+
+Read from the registry: company name, legal ID, **contact commitment (hash)**, Scope 1/2/3 totals, target and
+registration dates, or the trader profile. Email and phone are not onchain, so they are not shown here.
+Unregistered wallets get links to the company and trader registration pages.
+
+## Preferences and contracts
+
+Language (English / Chinese, shared with the top-bar toggle) and the list of configured
+contract addresses with explorer links.

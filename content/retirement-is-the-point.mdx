@@ -1,0 +1,105 @@
+---
+title: "Retirement Is the Point: How Permanent Offsets and Certificates Work"
+description: "A carbon credit only becomes a climate claim when it is retired. This post explains what retirement means, why it must be permanent and public, and how Carbonized records it onchain."
+date: 2026-09-15
+tags: ['retirement', 'certificates', 'offsetting', 'audit-trail']
+image: /images/blog/retirement-is-the-point.jpg
+imageCredit: "Photo: Dietmar Rabich / Wikimedia Commons (CC BY-SA 4.0) — https://commons.wikimedia.org/wiki/File:D%C3%BClmen,_Umland,_Sonnenaufgang_--_2012_--_8069.jpg"
+author: Carbonized
+---
+
+**TL;DR:** Buying a credit is not the same as offsetting emissions. The offset happens at *retirement*, when the credit is permanently removed from circulation and recorded against a named beneficiary and purpose. Carbonized's onchain retirement burns the NFT and stores a certificate that anyone can verify from chain data.
+
+In carbon markets, the interesting moment is not the purchase. It is the end of the credit's life. Everything before that, minting, listing, trading, is preparation. Retirement is where the claim is made, and it is where integrity is won or lost.
+
+## What retirement means
+
+Retiring a credit means marking it as used, permanently, so it cannot be sold, transferred for further use, or claimed again. In traditional registries, this is a status change on a serial number, often accompanied by a statement: "retired on behalf of Company X, for its 2026 operational emissions." The registry typically publishes this so others can check.
+
+Without retirement, a holder could claim the credit and then sell it on. The next buyer would claim it too. That is double use, one of the failure modes described in our [double counting post](/blog/double-counting-and-on-chain-registries).
+
+## Why permanence matters
+
+### The claim is only as strong as the finality
+
+If retirement could be reversed quietly, no claim would be reliable. Permanence means:
+
+- The credit cannot return to the active pool.
+- The record of who retired it, when, and why cannot be quietly edited.
+- Third parties can verify both facts independently.
+
+### Retirement also needs a purpose
+
+A good retirement record includes the beneficiary and the reason: for example, a Scope 1 offset for a given reporting year. That detail prevents the same retirement being cited for several unrelated claims. It also helps your own auditors tie credits to inventory lines. If you have not built an inventory yet, start with the [Scope 1, 2 and 3 guide](/blog/scope-1-2-3-first-emissions-inventory).
+
+## Retirement versus holding versus "burning" in other contexts
+
+Three related ideas often get mixed up:
+
+- **Holding** a credit as an asset: it can still change hands.
+- **Retiring** a credit: it is consumed for a claim.
+- **Cancelling** a credit within a compliance scheme: similar in effect, but defined by that scheme's rules.
+
+Only retirement supports a claim. Holding a large balance of credits says nothing about your emissions.
+
+## How Carbonized records retirement
+
+Carbonized has two distinct mechanisms, and it is important not to confuse them.
+
+### Onchain retirement
+
+The `CarbonCreditNFT` contract lets an owner retire a credit with a non-empty reason. The effects:
+
+1. The NFT is **burned**, so it no longer exists as a tradeable token.
+2. A `RetirementCertificate` is stored onchain, with the token ID, retiree, date, reason and tonnes.
+3. A `CreditRetired` event is emitted.
+4. The credit's metadata, such as project, methodology, vintage and serial, remains readable after the burn, so the certificate can be reconstructed later.
+
+A batch retire function exists for retiring several credits at once. Details are in the [CarbonCreditNFT reference](/docs/contracts/carbon-credit-nft).
+
+If the credit is wrapped into pooled CCT, you must unwrap it first; a wrapped NFT is held by the token contract and cannot be retired directly. The reasoning behind that structure is in the [NFT vs ERC-20 post](/blog/nft-vs-erc20-carbon-credits).
+
+### The app's depository status
+
+The web app also includes a backend "depository" ledger that can mark a credit as retired with a reason. This is a database change, not a blockchain transaction, and does not burn the NFT. It is convenient for bookkeeping but is **not** verifiable onchain. The [retire credits guide](/docs/guides/retire-credits) lays out the difference and warns against treating the depository flag as proof of retirement. I would rather say that plainly than blur the two.
+
+## Certificates you can verify
+
+Carbonized's [certificates page](/docs/app/certificates) rebuilds a retirement certificate from chain events. Anyone can open a public verification link without connecting a wallet. The verification:
+
+- fetches the transaction receipt from the network and rejects missing or failed transactions;
+- keeps only retirement events emitted by the configured credit contract;
+- cross-checks each event against the contract's stored certificate.
+
+The certificate number is derived from the token ID and a prefix of the transaction hash, so anyone can recompute it. You can print the page to PDF from the browser. There is no separate server holding the "official" certificate, so none that can go missing or be altered.
+
+That is an advantage of an onchain record: the evidence outlives the interface. If Carbonized's website vanished tomorrow, the events and stored certificates would still sit on the chain, readable with any tool.
+
+## Limits of an onchain certificate
+
+It is easy to overclaim here, so let us be precise.
+
+- A certificate proves that a particular token was retired, by a particular address, on a particular date. It does **not** prove that the underlying project is real. That depends on issuance and verification, covered in [what a carbon credit is](/blog/what-a-carbon-credit-actually-is).
+- The beneficiary is a wallet address. Linking it to a legal entity needs a separate process, such as a signed statement or a registry entry.
+- Retiring in one system does not automatically update an external registry. If the same serial exists on a traditional registry, the two records must be reconciled by whoever manages the claim.
+- On the current testnet, nothing has monetary value, and the credits are demonstrations.
+
+## A practical retirement checklist
+
+1. Decide what inventory line or target you are retiring against.
+2. Confirm the credit's methodology, vintage and serial number.
+3. Retire with a clear, specific reason, such as "Scope 1 offset, 2026."
+4. Keep the transaction hash and verification link with your reporting file.
+5. Describe it honestly in public statements: tonnes retired, standard, vintage, and how they relate to your total footprint.
+6. Do not retire what you intend to sell, and do not hold what you intend to claim.
+
+## Common mistakes
+
+- **Treating a purchase as an offset.** The claim starts at retirement.
+- **Retiring without recording the reason.** You lose the link to your inventory.
+- **Mixing depository status with onchain proof.** Pick the record you will rely on and be consistent.
+- **Retiring vintages that do not fit your reporting period or scheme rules.** Check eligibility first.
+
+## Takeaway
+
+Everything in a carbon marketplace, tokenization, order books, auctions, exists to serve one outcome: a retired credit with a public, permanent record. Carbonized's onchain retirement burns the token, stores a certificate, and lets anyone verify it. The design is simple on purpose, because the claim at the end should be too.

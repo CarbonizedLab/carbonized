@@ -1,0 +1,106 @@
+---
+title: Using an existing token (launchpad) — requirements and risks
+description: What Carbonized requires of a CARB token launched through a third-party launchpad, what the contracts check onchain, how holders vote through the voting wrapper, and the risks Carbonized cannot control.
+---
+
+<Callout type="warn" title="CARB is not launched yet">
+  This page describes a launch mode that is supported by the contracts and deployment scripts. No token address is configured and nothing has been launched. The contracts are **unaudited**.
+</Callout>
+
+<Callout type="error" title="The token is outside Carbonized's control">
+  If CARB is launched through a third-party launchpad, it is an external ERC-20. Liquidity-pool locks, token ownership, mint authority, tax switches, blacklists and upgradeability of that token are **not controlled by Carbonized**, and Carbonized contracts cannot protect you from a malicious or changeable token. CARB is not backed by, and not controlled by, the Carbonized contracts. Read the token source and the launchpad terms yourself. Not investment advice.
+</Callout>
+
+In this mode the staking, bond and governance contracts are deployed against an **existing token address** instead of the Carbonized token contract. Nothing about the protocol's own parameters or admin surface changes.
+
+## Requirements
+
+| Requirement | Detail |
+| --- | --- |
+| Plain ERC-20 | `balanceOf`, `transfer`, `transferFrom`, `approve`, `totalSupply`, `decimals`, with contract code at the address. |
+| Decimals 0 to 24 | Any value in that range works. Thresholds and bounds scale with the decimals. |
+| **No fee-on-transfer** | Deposits that deliver less than the requested amount are rejected onchain. |
+| **No rebasing** | Not supported. A negative rebase would leave the contracts holding less than they owe. |
+| Burn is optional | If the token has a working `burn(uint256)`, slashed tokens are burned. If not, they go to a sink address. |
+| Votes are optional | If the token has no suitable votes extension, holders vote through a voting wrapper (vCARB). |
+
+## What the contracts do onchain
+
+- `stake`, `bond` and the wrapper deposit pull an **exact amount**: the contract compares its balance before and after, and reverts with `Received amount differs (fee-on-transfer unsupported)` if the amount that arrived is not exactly the requested amount.
+- Decimals are read once at construction and must be 0 to 24.
+- Withdrawals are plain transfers. If the token's owner later enables a tax, it hits the recipient of the withdrawal, not the protocol's accounting. The deposit guard only blocks taxed deposits; it does not make a taxable token safe.
+- Amounts in the contracts are always token base units; bounds are expressed in **whole tokens** and scaled by the decimals: staking thresholds 1 to 50,000,000 tokens, bond minimum 1 to 100,000,000 tokens, governor proposal threshold at most 50,000,000 votes-tokens.
+- Slashing never reverts because of the token. Order: slash treasury (if set), then burn (only if the token has a working `burn(uint256)`, verified by a balance decrease), then the slash sink (default `0x000000000000000000000000000000000000dEaD`, changeable through `PARAMETER_ROLE`, never zero).
+
+## How holders vote
+
+Governance needs a votes token with a timestamp clock. If the external token is not one, Carbonized deploys **CarbVotes (vCARB)**, a 1:1 wrapper with no lock, fee, owner, pause or upgrade path.
+
+<Steps>
+<Step>
+
+### Deposit
+
+Approve CARB, then `depositFor` on the wrapper. You receive vCARB 1:1.
+
+</Step>
+<Step>
+
+### Delegate
+
+Call `delegate(...)` on the **wrapper** (self-delegation is enough). Votes count from the next second.
+
+</Step>
+<Step>
+
+### Vote
+
+Vote on proposals in the [Governance page](/docs/app/governance). The governor reads votes from the wrapper.
+
+</Step>
+<Step>
+
+### Withdraw
+
+`withdrawTo` returns CARB 1:1 at any time.
+
+</Step>
+</Steps>
+
+CARB that is staked, bonded, or simply held in a wallet without being wrapped carries **no votes**.
+
+<Callout type="warn" title="Quorum is a share of the wrapped supply">
+  Quorum is a percentage of the **wrapped vCARB supply** at the snapshot, not of the CARB total supply. While little CARB is wrapped, the quorum is small, so a small group can reach it. That is a governance-capture risk early on. The proposal threshold is an absolute amount. See [Governance](/docs/token/governance).
+</Callout>
+
+Which votes token the governor uses is chosen at deployment: the Carbonized token itself, the external token if it already implements ERC-5805 votes with a **timestamp** clock (`native`), or a new wrapper (`wrapper`). A token with votes on a block-number clock is wrapped, because governor durations are in seconds.
+
+## The go/no-go check
+
+Before deployment a read-only script inspects the token, needs no key and works on any network:
+
+```text
+CARB_TOKEN_ADDRESS=0x... npx hardhat run scripts/deploy/22_attach_token_check.js --network robinhoodMainnet
+```
+
+It prints a table covering: contract code, ERC-20 reads, decimals 0 to 24, total supply (above 0, at most uint128), whether `burn(uint256)` exists, votes (native or wrapper), heuristic bytecode flags (tax, blacklist, mint, rebase selectors), `owner()` and `paused()`. It exits with code 1 on **NO-GO**.
+
+What it cannot do:
+
+- It cannot simulate fee-on-transfer. The contracts enforce that onchain, so try the smallest amount first after deployment.
+- It cannot detect rebasing, or an owner who can change the token's behaviour later. Bytecode flags are heuristics, not proof.
+
+## Risks of a launchpad token
+
+- Ownership, mint authority, tax switches, blacklist, pause and upgradeability of the token belong to whoever controls it, not to Carbonized.
+- A token that can be changed after launch can break staking, bonds or voting in ways the contracts cannot prevent.
+- Liquidity-pool locks and launchpad terms are outside Carbonized.
+- Launchpad and legal rules for the token apply on top of the points in [Risks and legal](/docs/token/risks-and-legal).
+
+## Related
+
+[CARB overview](/docs/token) · [Governance](/docs/token/governance) · [Staking and tiers](/docs/token/staking-and-tiers) · [Issuer bond](/docs/token/issuer-bond) · [Risks and legal](/docs/token/risks-and-legal)
+
+<Callout type="error" title="Legal notice">
+  Not investment advice. Not an offer or solicitation. May be restricted in your jurisdiction. No returns are promised. The contracts are unaudited. Get your own advice.
+</Callout>

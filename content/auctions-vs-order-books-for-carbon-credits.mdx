@@ -1,0 +1,103 @@
+---
+title: "Auctions vs Order Books for Carbon Credits"
+description: "Carbon credits vary widely in quality and liquidity. This post compares order books and auctions as price-discovery tools, with the specifics of how Carbonized's marketplace contract implements each."
+date: 2026-09-24
+tags: ['marketplace', 'auctions', 'order-book', 'price-discovery']
+image: /images/blog/auctions-vs-order-books-for-carbon-credits.jpg
+imageCredit: "Photo: Carol M. Highsmith / Wikimedia Commons (Public domain) — https://commons.wikimedia.org/wiki/File:New_York_Stock_Exchange_trading_floor_on_Wall_Street,_New_York,_New_York_LCCN2011634218.tif"
+author: Carbonized
+---
+
+**TL;DR:** Order books work well for standardised, frequently traded units where many buyers and sellers want to meet at a known price. Auctions work better for rare or one-off lots whose value is uncertain. Carbonized's marketplace contract offers both, plus an automated market maker, and each has simple but real trade-offs.
+
+How should a market find the price of a carbon credit? The answer depends on how standardised the thing being sold is. Carbonized provides several mechanisms because credits live along a spectrum from commodity to collectible.
+
+## Price discovery in one paragraph
+
+Price discovery is how buyers and sellers converge on what something is worth. When a good is uniform and traded often, standing quotes do the job. When it is unusual, someone must ask the market, and an auction is a way of asking.
+
+## Order books
+
+An order book is a list of standing offers.
+
+- A **buy order** says: I will pay up to this price per tonne for this amount.
+- A **sell order** says: I will sell this amount at no less than this price.
+
+A trade happens when someone accepts an existing order. The best bid and best ask set the visible spread, and depth shows how much volume sits at each level.
+
+### Strengths
+
+- **Transparent.** Everyone sees the same quotes.
+- **Price control.** You state your limit and wait, instead of paying whatever a curve gives you.
+- **Fits standardised units.** Pooled, fungible tokens such as methodology-specific CCT are good candidates.
+
+### Weaknesses
+
+- **Needs liquidity.** With few participants, spreads widen and orders sit untouched.
+- **Capital is locked.** Escrowed funds or tokens cannot be used elsewhere while the order is open.
+- **Stale quotes.** If the world moves and you do not, someone may take your order at a price you no longer like.
+
+### How Carbonized implements it
+
+In the marketplace contract, creating an order escrows the relevant asset: payment tokens for a buy, CCT for a sell. Orders can be partially filled, and creators can cancel the unfilled remainder for a refund. An important detail: anyone fills an order directly, and orders are **not** matched against each other by the contract. So two crossing orders do not automatically trade; a third party must take one. That keeps the contract simple but means a user wanting instant execution should hit an existing order. Full details are in the [CarbonMarketplace reference](/docs/contracts/carbon-marketplace) and the [buy credits guide](/docs/guides/buy-credits).
+
+## Auctions
+
+In an auction, a seller offers a lot and buyers bid. Carbonized implements an English-style ascending auction.
+
+- The seller escrows the amount and sets a start price and an end time.
+- Bidders must offer at least the start price and more than the current highest bid.
+- When a new bid arrives, the previous top bidder is refunded immediately.
+- After the end time, anyone can finalise the auction. With bids, the seller receives the winning bid minus the fee and the winner receives the tokens; without bids, the tokens return to the seller.
+
+### Strengths
+
+- **Good for uncertain value.** A rare vintage, a large block or a special project may not have a reference price. Bids reveal one.
+- **Competition works for the seller.** Multiple interested buyers raise the price.
+- **Simple rules.** One lot, one winner, one price.
+
+### Weaknesses
+
+- **Slow.** Participants wait for the end time.
+- **Winner's curse.** The winner may have overestimated the value, especially when information is thin.
+- **Sniping.** Late bids can leave little room to respond. Our current contract has no automatic extension when a bid arrives near the end, and no minimum bid increment. Those are design gaps rather than features, and ones I would revisit.
+- **Seller cannot withdraw once bids exist.** Cancellation is only permitted while there are no bids, which protects bidders but removes flexibility for the seller.
+
+See the [run an auction guide](/docs/guides/run-an-auction) for the practical flow.
+
+## The third option: an AMM pool
+
+The contract also includes a constant-product automated market maker for one CCT and payment-token pair. Liquidity providers deposit both sides, and traders swap against the pool at a price set by reserves. Fees accrue to the pool. AMMs always offer a quote, which helps in thin markets, but larger trades suffer slippage. In the current web app there is no swap page yet; the capability exists in the contract and a hook, not in the interface. I mention it so that the description of what is built stays accurate.
+
+## Choosing between them
+
+| Situation | Better tool |
+| --- | --- |
+| Standardised, pooled tokens; you have a target price | Order book |
+| One premium or unusual credit; unknown value | Auction |
+| Small trade, immediate execution wanted | Fill an existing order |
+| Thin market, always-available quote needed | AMM pool |
+| Large block, want competition | Auction, or split across venues |
+
+### A worked illustration
+
+Suppose you hold 200 tonnes of pooled credits of a common type. A sell order at a fair price lets you wait for a buyer without paying auction overhead. Now suppose you hold a single credit from a distinctive project with a recent vintage and strong documentation. No reference price exists, so an auction lets interested buyers compete. The numbers are examples only; the choice is the point.
+
+## Fees and settlement
+
+Carbonized's default trading fee is 0.25 percent, adjustable by an admin up to 1 percent. On order fills and auctions the fee is deducted from what the seller receives; on AMM swaps it is deducted from the input amount. Check the cost of each route before you choose. Our post on [reading carbon prices](/blog/reading-carbon-prices-and-market-data) shows how to compare venues.
+
+## Things we would improve
+
+Being honest about the current build:
+
+- A minimum bid increment and an anti-sniping extension for auctions.
+- Order matching, so crossing orders execute without a third party.
+- Fee collection logic: fees currently stay in the contract with no withdrawal function.
+- A user interface for the AMM.
+
+All of this is on testnet with a mock payment token. None of it has been audited.
+
+## Takeaway
+
+No single mechanism is best. Order books suit liquid, standardised units; auctions suit rare, hard-to-price lots; AMMs offer always-on quotes at the cost of slippage. Offering all three, and being clear about each one's behaviour, lets users match the tool to the credit.

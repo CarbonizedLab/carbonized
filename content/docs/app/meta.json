@@ -1,0 +1,24 @@
+{
+  "$schema": "..\\..\\..\\.source\\json-schema\\docs.meta.json",
+  "title": "Web App",
+  "pages": [
+    "dashboard",
+    "emissions",
+    "assess",
+    "tokenize",
+    "marketplace",
+    "auctions",
+    "portfolio",
+    "sell-credits",
+    "carbon-wallet",
+    "certificates",
+    "audit",
+    "credit-requests",
+    "token",
+    "governance",
+    "issuer",
+    "company",
+    "trader",
+    "settings"
+  ]
+}

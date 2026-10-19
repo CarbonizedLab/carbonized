@@ -1,0 +1,192 @@
+import { File, Files, Folder } from 'fumadocs-ui/components/files';
+import { InlineTOC } from 'fumadocs-ui/components/inline-toc';
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+import defaultMdxComponents from 'fumadocs-ui/mdx';
+import type { Metadata } from 'next';
+import Image from 'next/image';
+import { notFound } from 'next/navigation';
+import Balancer from 'react-wrap-balancer';
+import { description as homeDescription } from 'src/app/layout.shared';
+import {
+  PostComments,
+  Share,
+} from '@/app/(home)/(blog)/blog/[slug]/page.client';
+import { PostJsonLd } from '@/components/json-ld';
+import { Section } from '@/components/section';
+import { TagCard } from '@/components/tags/tag-card';
+import { createMetadata, getPageImage } from '@/lib/metadata';
+import { getPost, getPosts, type Page as MDXPage } from '@/lib/source';
+import { cn } from '@/lib/utils';
+import { isAuthConfigured } from '@/server/auth/enabled';
+
+function Header(props: { page: MDXPage; tags?: string[] }) {
+  const { page, tags } = props;
+
+  return (
+    <Section className='p-4 lg:p-6'>
+      <div
+        className={cn(
+          'flex flex-col items-start justify-center gap-4 py-8 md:gap-6',
+          'sm:items-center sm:rounded-lg sm:border sm:bg-card sm:px-8 sm:py-20 sm:shadow-xs'
+        )}
+      >
+        <div className='flex flex-col gap-2 sm:text-center md:gap-4'>
+          <h1 className='max-w-4xl font-normal text-3xl leading-tight tracking-tight sm:text-4xl sm:leading-tight md:text-5xl md:leading-tight lg:text-6xl'>
+            <Balancer>{page.data.title ?? 'Untitled'}</Balancer>
+          </h1>
+          <p className='mx-auto max-w-4xl'>
+            <Balancer>{page.data.description ?? ''}</Balancer>
+          </p>
+        </div>
+        <div className='flex flex-wrap gap-2'>
+          {tags?.map((tag) => (
+            <TagCard className='border border-border' key={tag} name={tag} />
+          ))}
+        </div>
+      </div>
+    </Section>
+  );
+}
+
+function Hero(props: { page: MDXPage }) {
+  const { image, imageCredit, title } = props.page.data;
+
+  if (!image) {
+    return null;
+  }
+
+  return (
+    <Section className='px-4 pb-4 lg:px-6'>
+      <figure className='flex flex-col gap-2'>
+        <Image
+          alt={title ?? 'Post cover'}
+          className='aspect-[1600/840] w-full rounded-lg border object-cover'
+          height={840}
+          priority
+          src={image}
+          width={1600}
+        />
+        {imageCredit && (
+          <figcaption className='text-fd-muted-foreground text-xs'>
+            {imageCredit}
+          </figcaption>
+        )}
+      </figure>
+    </Section>
+  );
+}
+
+export default async function Page(props: {
+  params: Promise<{ slug: string }>;
+}) {
+  const params = await props.params;
+  const page = getPost([params.slug]);
+
+  if (!page) {
+    notFound();
+  }
+  const { body: Mdx, toc, tags, lastModified } = page.data;
+
+  const lastUpdate = lastModified ? new Date(lastModified) : undefined;
+
+  return (
+    <>
+      <Header page={page} tags={tags} />
+      <Hero page={page} />
+
+      <Section className='h-full' sectionClassName='flex flex-1'>
+        <article className='flex min-h-full flex-col lg:flex-row'>
+          <div className='flex flex-1 flex-col gap-4'>
+            <InlineTOC
+              className='rounded-none border-0 border-border border-b border-dashed'
+              items={toc}
+            />
+            <div className='prose min-w-0 flex-1 px-4'>
+              <Mdx
+                components={{
+                  ...defaultMdxComponents,
+                  File,
+                  Files,
+                  Folder,
+                  Tabs,
+                  Tab,
+                }}
+              />
+            </div>
+            {isAuthConfigured ? (
+              <PostComments
+                className='[&_form>div]:!rounded-none rounded-none border-0 border-border border-t border-dashed'
+                slug={params.slug}
+              />
+            ) : (
+              <p className='border-border border-t border-dashed px-4 py-6 text-muted-foreground text-sm'>
+                Comments are not enabled yet.
+              </p>
+            )}
+          </div>
+          <div className='flex flex-col gap-4 p-4 text-sm lg:sticky lg:top-[4rem] lg:h-[calc(100vh-4rem)] lg:w-[250px] lg:self-start lg:overflow-y-auto lg:border-border lg:border-l lg:border-dashed'>
+            <div>
+              <p className='mb-1 text-fd-muted-foreground'>Written by</p>
+              <p className='font-medium'>{page.data.author ?? 'Unknown'}</p>
+            </div>
+            <div>
+              <p className='mb-1 text-fd-muted-foreground text-sm'>
+                Created At
+              </p>
+              <p className='font-medium'>
+                {new Date(page.data.date).toDateString()}
+              </p>
+            </div>
+            {lastUpdate && (
+              <div>
+                <p className='mb-1 text-fd-muted-foreground text-sm'>
+                  Updated At
+                </p>
+                <p className='font-medium'>{lastUpdate.toDateString()}</p>
+              </div>
+            )}
+            <Share url={page.url} />
+          </div>
+        </article>
+      </Section>
+      <PostJsonLd page={page} />
+    </>
+  );
+}
+
+export async function generateMetadata(props: {
+  params: Promise<{ slug: string }>;
+}): Promise<Metadata> {
+  const params = await props.params;
+  const page = getPost([params.slug]);
+
+  if (!page) {
+    notFound();
+  }
+
+  const title = page.data.title ?? 'Untitled';
+  const description = page.data.description ?? homeDescription;
+
+  const image = getPageImage(page);
+
+  return createMetadata({
+    title,
+    description,
+    openGraph: {
+      url: `/blog/${page.slugs.join('/')}`,
+      images: image.url,
+    },
+    twitter: {
+      images: image.url,
+    },
+    alternates: {
+      canonical: page.url,
+    },
+  });
+}
+
+export function generateStaticParams(): { slug: string | undefined }[] {
+  return getPosts().map((page) => ({
+    slug: page.slugs[0],
+  }));
+}

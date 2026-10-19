@@ -1,0 +1,91 @@
+---
+title: Run an auction
+description: Create an auction as a seller, bid as a buyer, and settle it.
+---
+
+An auction sells a block of CCT to the highest **total** payment token bid. The seller's CCT and the top bid's payment token are both held by `CarbonMarketplace` until settlement.
+
+## As a seller
+
+<Steps>
+<Step>
+
+### Have CCT
+
+Wrap NFT credits first (see [Sell credits](/docs/guides/sell-credits)). You need a CCT balance covering the auction amount.
+
+</Step>
+<Step>
+
+### Create the auction
+
+On `/app/sell-credits` choose **Auction**. Enter the amount (tonnes), **Starting Bid** (a *total* in payment token for the whole lot) and an **End Date** (browser local time) that is **between 1 hour and 30 days from now**. Click **Create Listing**. After an optional CCT `approve`, the app calls `createAuction(amount, startPrice, endTime)` with `endTime` as an absolute Unix timestamp, which locks the CCT.
+
+</Step>
+<Step>
+
+### Watch it
+
+The auction appears at `/app/auctions` with a **Seller** badge and **Seller Controls**: highest bid, bidder, and a bid-history link.
+
+</Step>
+<Step>
+
+### Settle
+
+- **No bids:** click **Cancel Auction** any time (`cancelAuction`), or wait for the end and call finalize; the CCT returns to you.
+- **With bids:** you cannot cancel. After the end time click **Accept & Finalize**, which calls `finalizeAuction`. You receive the highest bid minus the 0.25 % default fee (the rate that applied when the auction was created); the winner receives the CCT. If the payment token refuses to pay you, the proceeds become claimable with **Claim**.
+
+</Step>
+</Steps>
+
+## As a bidder
+
+<Steps>
+<Step>
+
+### Have payment token and gas
+
+See [Buy credits](/docs/guides/buy-credits#get-test-usdc) for test payment token (testnet only); on mainnet you need real payment token.
+
+</Step>
+<Step>
+
+### Place a bid
+
+Open `/app/auctions`, click **Place Bid**, and enter your **total bid in payment token**. It must be at least the starting price and strictly higher than the current bid. The app approves payment token if needed (`approve(marketplace, bid)`), then calls `placeBid(auctionId, bidAmount)`. The payment token is escrowed.
+
+</Step>
+<Step>
+
+### If you are outbid
+
+Your payment token is refunded automatically in the same transaction as the higher bid (if the token refuses the transfer, the refund appears as a **Claim** banner on the marketplace). The card shows **Outbid** and a **Place Higher Bid** button.
+
+</Step>
+<Step>
+
+### Claim
+
+After the timer ends, the winner sees **Finalize & Claim CCT** and calls `finalizeAuction`. The CCT is transferred to the winning wallet.
+
+</Step>
+</Steps>
+
+<Callout title="Anyone can finalize">
+  The contract lets any address call `finalizeAuction` once `endTime` has passed. The UI exposes the
+  button to the seller and the highest bidder. An auction stays in the list, marked as ended, until
+  it is finalized.
+</Callout>
+
+## If it fails
+
+| Message | Meaning |
+| --- | --- |
+| `Duration too short`, `Duration too long` | End date is not between 1 hour and 30 days from now. |
+| `Bid below start price`, `Bid too low` | Bid under the start price or not above the highest bid. |
+| `Auction ended` | Bid sent after `endTime`. |
+| `Auction not ended` | Finalize attempted early. |
+| `Auction has bids` | Cancel attempted after a bid. |
+
+Reference: [Auctions page](/docs/app/auctions)

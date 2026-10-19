@@ -1,0 +1,59 @@
+---
+title: Tokenize
+description: Wrap issuer-created carbon credit NFTs into pooled CCT tokens in four steps, or unwrap CCT back into the NFT.
+---
+
+Route: `/app/tokenize`. Turns the carbon credit NFTs you own into fungible ERC-20 **CCT** tokens. There is one pooled token contract per methodology, so an NFT can only be wrapped into the pool that matches its `methodology`. Only credits that carry a registry serial number and a non-zero oracle proof hash can be wrapped (`Unverified credit` otherwise), so every NFT in a pool meets the same minimum bar.
+
+| Methodology | Token | Env variable |
+| --- | --- | --- |
+| `VERRA_VCS` | CCT-VCS (the token the marketplace trades) | `NEXT_PUBLIC_CARBON_CREDIT_TOKEN` |
+| `GOLD_STANDARD` | CCT-GS | `NEXT_PUBLIC_CARBON_CREDIT_TOKEN_GOLD_STANDARD` |
+| `ICM_COMPLIANCE` | CCT-ICM | `NEXT_PUBLIC_CARBON_CREDIT_TOKEN_ICM_COMPLIANCE` |
+
+## Conversion rate
+
+`CarbonCreditToken.wrapCredit` mints exactly the NFT's `co2Tonnes` (stored with 18 decimals): **1 tonne CO2e = 1 CCT**. The NFT is transferred to the token contract and locked as backing; `unwrapCredit(tokenId)` burns the same amount of CCT and returns the NFT.
+
+## The four steps
+
+1. **Select credits**: your NFTs (from `getUserCredits`) with project, methodology, vintage, tonnes and geography. NFTs that the pool contract would reject are shown but cannot be selected, each with the reason (see below). NFTs you already wrapped are listed below as **Already tokenized**. Filter chips appear when you hold more than one standard.
+2. **Review**: the CCT you will receive per pool, your current and resulting balance, whether the pool still needs NFT approval, and the number of transactions.
+3. **Approve and wrap**: for each pool that is not yet an approved operator, `setApprovalForAll(pool, true)` on the NFT contract, then `wrapCredit(tokenId)` once per NFT. Each transaction shows its status (waiting, confirm in wallet, confirming, confirmed, failed, rejected) and an explorer link. A rejected or failed transaction stops the queue; **Retry** resumes from the failed one, and **Finish with wrapped credits** appears if some NFTs were already wrapped.
+4. **Done**: minted amount, new CCT balance per pool and links to [Sell Credits](/docs/app/sell-credits), the [Marketplace](/docs/app/marketplace) and the [Portfolio](/docs/app/portfolio).
+
+<Callout title="Order book supports CCT-VCS only">
+  `CarbonMarketplace` is deployed with a single carbon token (CCT-VCS). CCT-GS and CCT-ICM can be
+  held and unwrapped, but cannot be listed on the order book.
+</Callout>
+
+### Why a credit cannot be wrapped
+
+The page applies the same rules as `CarbonCreditToken.wrapCredit` with read-only calls, so a credit that would revert is blocked before you spend gas:
+
+| Reason shown | Rule | Contract message if sent anyway |
+| --- | --- | --- |
+| Retired | The credit is already retired | `Cannot wrap retired credit` |
+| Zero tonnes | `co2Tonnes` is 0 | `Empty credit` |
+| No registry serial | The stored serial is empty | `Unverified credit` |
+| No oracle proof | The stored proof hash is all zeros | `Unverified credit` |
+| No pool for methodology | The credit's methodology is not `ICM_COMPLIANCE`, `VERRA_VCS` or `GOLD_STANDARD`, so no pool matches exactly | `Methodology mismatch` |
+| No pool configured | The pool for that methodology has no address in `NEXT_PUBLIC_CARBON_CREDIT_TOKEN*` | not applicable |
+
+The ownership check (`Not NFT owner`) and `Already wrapped` cannot occur for NFTs listed here. The current NFT contract rejects empty serials, zero proofs and zero tonnes at mint, so the blockers you are most likely to see are a methodology label with no matching pool (the label is free text when an [issuer](/docs/guides/issuer) mints) and a pool that is not configured. The empty-serial and zero-proof checks remain because the pool contract enforces them independently of the NFT contract it is attached to.
+
+## Unwrap tab
+
+Lists NFTs you wrapped (`getUserWrappedNFTs` on each pool) with the CCT burned and your balance. **Unwrap NFT** calls `unwrapCredit(tokenId)` and is disabled when your CCT balance is lower than the NFT's tonnes.
+
+## Empty and error states
+
+| State | Behaviour |
+| --- | --- |
+| Wallet not connected | Connect prompt. |
+| Contracts not configured | Explains which environment variables are missing. |
+| No NFTs | Explains that credits come from an authorized issuer or from buying CCT; there is no free starter pack. Links to company registration, credit requests and the [Issuer](/docs/app/issuer) page. |
+| Wallet rejection | Shown as "Rejected in wallet"; nothing is sent and the step can be retried. |
+| Revert | The contract's revert reason (for example `Methodology mismatch`, `Already wrapped`, `Unverified credit`) is shown on the failing transaction. |
+
+The page is available in English and Chinese through the language toggle.

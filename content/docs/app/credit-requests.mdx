@@ -1,0 +1,52 @@
+---
+title: Credit Requests
+description: Post a buy order (a request for credits) or buy directly from sell orders.
+---
+
+Route: `/app/credit-requests`. A friendlier front-end over the marketplace order book. A "request" is simply a **buy order** with payment token escrowed.
+
+## What it shows
+
+Balance bar (payment token, CCT) and four stat cards: Total Requested, Already Filled, Still Pending (your buy orders) and Available Credits (all open sell orders). Trend percentages on the cards are decorative.
+
+| Tab | Content |
+| --- | --- |
+| **Browse Market** (default) | Open sell orders with an amount input (pre-filled with the full remaining amount) and **Buy Now**. |
+| **My Requests** | Your active buy orders with status `PENDING` (no fills), `PARTIAL`, `FILLED`, a progress bar and total/filled/remaining/max price. |
+| **Submit Request** | Form: credits needed (tonnes) and maximum price per tonne (payment token). Shows estimated max cost. |
+
+## Actions
+
+| Action | Approval first | Contract call |
+| --- | --- | --- |
+| **Submit Request** | payment token `approve(marketplace, cost)` for the exact cost (`amount × price / 1e18`, rounded up, in payment token base units) if the freshly read allowance is lower | `createBuyOrder(amount, pricePerTonne, 0, false)`; the price is converted with the payment token `decimals()` read from the chain. It locks `cost` payment token in the marketplace. |
+| **Buy Now** | payment token `approve(marketplace, cost)` if allowance is lower | `fillOrder(orderId, amount)` |
+
+Receipts are awaited; a reverted buy-order receipt shows "Buy order transaction reverted".
+
+<Callout title="Things the UI does not do">
+  The request has **no expiry** (`expiresIn = 0`) and no KYC flag; the `deadline` value kept in the
+  form state is not rendered or sent. There is no cancel button on this page: to recover the escrowed
+  payment token of an open buy request, use **Cancel order** under **My orders** on the
+  [Marketplace](/docs/app/marketplace) page (`cancelOrder(orderId)`). The **Open for Sellers** label on a
+  request card is informational and has no handler.
+</Callout>
+
+Sellers fulfil a request from [Marketplace → Companies Need Credits](/docs/app/marketplace).
+
+## Data sources
+
+All onchain (`OrderCreated` logs from the last 20,000 blocks, `getOrder`, ERC-20 `balanceOf` / `allowance`). No backend call.
+
+## States
+
+| State | Behaviour |
+| --- | --- |
+| Wallet not connected | "Connect Wallet to Trade Credits" empty state. |
+| No sell orders | "Nothing listed". |
+| No requests | "No requests" with a **Submit Request** button. |
+| Contracts not configured | Banner in the shell; lists stay empty. |
+
+## Related
+
+[Buy credits guide](/docs/guides/buy-credits) · [Marketplace](/docs/app/marketplace)

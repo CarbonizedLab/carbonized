@@ -1,0 +1,188 @@
+---
+title: IssuerBond
+description: CARB bond that gates the bonded-issuer path to ISSUER_ROLE, with unbonding delay, dispute window and slashing.
+---
+
+**Inherits:** `AccessControl`, `ReentrancyGuard`. Source: `contracts/token/IssuerBond.sol`.
+
+<Callout type="warn" title="Legal notice">
+  Technical reference for unaudited contracts. Not investment advice, not an offer or solicitation, no returns promised. A bond can be slashed and lost. CARB may be restricted in your jurisdiction and is not launched yet. Get your own advice.
+</Callout>
+
+`IssuerBond` is a skin-in-the-game gate for the **bonded issuer** path to [`CarbonCreditNFT`](/docs/contracts/carbon-credit-nft)'s `ISSUER_ROLE`. It earns nothing: a bond is locked, can be slashed, and is returned only after a delay.
+
+## Mixed issuer model
+
+| Path | Who grants `ISSUER_ROLE` | Bond |
+| --- | --- | --- |
+| Trusted issuers | the multisig, holder of the NFT's `ISSUER_ADMIN_ROLE`, grants it directly | none. `IssuerBond` never touches these roles: a trusted issuer who also bonds keeps the role when unbonding. |
+| Bonded issuers | `IssuerBond` itself, which must hold `ISSUER_ADMIN_ROLE` (granted by the NFT admin) | at least `minBond` CARB, slashable |
+
+`bondRequired` is the switch of **this path only**: `true` = the bond path is open (minimum enforced), `false` = no **new** bonding. Existing bonds can still unbond, withdraw and be slashed. It never affects trusted issuers.
+
+<Callout type="warn" title="Open bond path">
+  While the path is open, anyone willing to lock the bond can obtain `ISSUER_ROLE` and mint credits. The bond is a deterrent, not a verification of credit quality. The design recommends keeping `bondRequired = false` until off-chain verification and an appeals process back the slasher.
+</Callout>
+
+## Constructor
+
+```solidity
+constructor(
+    address carb_,
+    address nft_,
+    address admin,
+    uint256 minBond_,
+    uint256 unbondDelay,
+    uint256 disputeWindow,
+    bool bondRequired_,
+    address slashTreasury_
+)
+```
+
+| Revert | Condition |
+| --- | --- |
+| `Invalid address` | `carb_`, `nft_` or `admin` is the zero address |
+| `Min bond out of bounds` | `minBond_` outside `MIN_BOND_FLOOR`..`MAX_MIN_BOND` |
+| `Unbond delay out of bounds` | `unbondDelay` outside `MIN_UNBOND_DELAY`..`MAX_UNBOND_DELAY` |
+| `Dispute window out of bounds` | `disputeWindow` outside `MIN_DISPUTE_WINDOW`..`MAX_DISPUTE_WINDOW` |
+
+`ISSUER_ROLE` is read from the NFT. `admin` receives `DEFAULT_ADMIN_ROLE`, `PARAMETER_ROLE` and `SLASHER_ROLE`. After deployment the NFT admin must call `nft.grantRole(ISSUER_ADMIN_ROLE, bond)`; without it, granting and revoking the role fails.
+
+## Immutable and constant parameters
+
+| Name | Value | Notes |
+| --- | --- | --- |
+| `carb`, `nft`, `ISSUER_ROLE` | constructor args | immutable |
+| `UNBOND_DELAY` | constructor arg | immutable. Bounds: `MIN_UNBOND_DELAY` 7 days, `MAX_UNBOND_DELAY` 90 days |
+| `DISPUTE_WINDOW` | constructor arg | immutable. Bounds: `MIN_DISPUTE_WINDOW` 1 day, `MAX_DISPUTE_WINDOW` 30 days |
+| `EXECUTION_WINDOW` | 14 days | after the dispute window a proposal can be executed for this long, then it lapses |
+| `MIN_BOND_FLOOR` | 1 CARB | smallest allowed `minBond` |
+| `MAX_MIN_BOND` | 100,000,000 CARB | largest allowed `minBond` |
+| `MAX_REASON_LENGTH` | `512` | bytes of a slash reason |
+
+<Callout title="Default in deployment helper, owner may change before launch">
+  The deployment helper and tests use a minimum bond of 10,000 CARB, an unbond delay of 30 days and a dispute window of 7 days. Whether the bond path is open at launch is an owner choice. Published values will be listed at launch (`contracts/contracts/docs/TOKEN.md`, parameters table).
+</Callout>
+
+## State
+
+```solidity
+struct Bond {
+    uint128 amount;     // CARB locked
+    uint64  releaseAt;  // withdrawable at (only meaningful while unbonding)
+    bool    unbonding;  // exit started; role already revoked
+    bool    roleViaBond; // this contract granted ISSUER_ROLE
+}
+
+struct SlashProposal {
+    address issuer;
+    uint128 amount;
+    uint64  executableAt; // proposal time + DISPUTE_WINDOW
+    uint64  expiresAt;    // executableAt + EXECUTION_WINDOW
+    bool    disputed;
+    bool    resolved;     // executed or cancelled
+}
+```
+
+Public state: `bonds(address)`, `slashProposals(id)`, `activeSlashOf(issuer)` (latest proposal id, `0` = none), `blocked(address)`, `nextSlashId` (starts at `1`), `minBond`, `bondRequired`, `slashTreasury` (`address(0)` = burn).
+
+## Lifecycle
+
+1. **`bond(amount)`**: locks CARB (prior `approve` needed). Once the bond is at least `minBond`, the role is granted if the issuer does not already hold it. May be called again to top up, for example after a slash.
+2. **`startUnbond()`**: the bond-granted role is **revoked immediately**, and the bond becomes withdrawable after `UNBOND_DELAY`, so misbehaviour found after the last mint can still be slashed. Blocked while a slash proposal is active.
+3. **`withdraw()`**: after the delay, and never while a slash proposal is active. Returns the whole remaining bond.
+
+A role that the multisig revoked manually is not silently restored by a top-up; use `setIssuerBlocked` to bar the address from the bond path entirely.
+
+## Slashing
+
+`SLASHER_ROLE` is intended for the governance timelock (and the multisig at bootstrap).
+
+1. `proposeSlash(issuer, amount, reason)` opens a proposal. For `DISPUTE_WINDOW` seconds nothing executes, and the issuer cannot start unbonding or withdraw.
+2. The issuer may `disputeSlash(id, evidenceHash)`. This records an evidence hash onchain; a disputed proposal can then only be executed by a `SLASHER_ROLE` holder. It is not adjudication.
+3. After the window, an **undisputed** proposal can be executed by anyone (liveness: a vanished slasher cannot hold a bond hostage). It stays executable for `EXECUTION_WINDOW` more seconds, then lapses and stops freezing the exit.
+4. The slasher can `cancelSlash` at any time.
+5. Slashed CARB is **burned** unless `slashTreasury` is set. At most `amount` is slashed, capped to the remaining bond. If the remaining bond falls below `minBond`, the bonded role is revoked until the issuer tops up. Slashing never reverts because the contract lost its NFT role (the revoke is skipped and the multisig revokes directly).
+
+One active proposal per issuer, so an exit can be frozen for at most `DISPUTE_WINDOW + EXECUTION_WINDOW` per proposal.
+
+## Functions
+
+| Function | Access | Behavior |
+| --- | --- | --- |
+| `bond(amount)` | anyone, `nonReentrant` | Locks CARB; grants `ISSUER_ROLE` when the bond reaches `minBond` |
+| `startUnbond()` | bonded account, `nonReentrant` | Starts the exit, revokes the bond-granted role |
+| `withdraw()` returns `amount` | unbonding account, `nonReentrant` | Pays out the bond after `UNBOND_DELAY` |
+| `proposeSlash(issuer, amount, reason)` returns `id` | `SLASHER_ROLE` | Opens a proposal |
+| `disputeSlash(id, evidenceHash)` | the slashed issuer | Marks the proposal disputed |
+| `cancelSlash(id)` | `SLASHER_ROLE` | Resolves the proposal without slashing |
+| `executeSlash(id)` returns `slashed` | anyone if undisputed; `SLASHER_ROLE` if disputed; `nonReentrant` | Burns or transfers the slashed CARB |
+| `hasActiveSlash(issuer)` | view | unresolved and unlapsed proposal exists |
+| `isBondedIssuer(issuer)` | view | this contract tracks a bond-granted role for `issuer` |
+| `setMinBond(newMinBond)` | `PARAMETER_ROLE` | Bounded `1`..`100,000,000` CARB. Applies to new bonding and top-ups only; existing bonds are grandfathered. |
+| `setBondRequired(enabled)` | `PARAMETER_ROLE` | Opens or closes the bond path |
+| `setSlashTreasury(treasury)` | `PARAMETER_ROLE` | `address(0)` = burn |
+| `setIssuerBlocked(issuer, isBlocked)` | `DEFAULT_ADMIN_ROLE` | Bars an address from the bond path. Not a governance power. |
+
+## Events
+
+| Event | Parameters |
+| --- | --- |
+| `Bonded` | `address indexed issuer, uint256 amount, uint256 totalBond, bool roleGranted` |
+| `UnbondStarted` | `address indexed issuer, uint256 amount, uint256 releaseAt, bool roleRevoked` |
+| `Withdrawn` | `address indexed issuer, uint256 amount` |
+| `SlashProposed` | `uint256 indexed id, address indexed issuer, uint256 amount, string reason, uint256 executableAt, uint256 expiresAt` |
+| `SlashDisputed` | `uint256 indexed id, address indexed issuer, bytes32 evidenceHash` |
+| `SlashCancelled` | `uint256 indexed id, address indexed issuer` |
+| `Slashed` | `uint256 indexed id, address indexed issuer, uint256 amount, address indexed sink, bool burned` |
+| `RoleRevokedUnderBonded` | `address indexed issuer` |
+| `MinBondUpdated` | `uint256 oldMinBond, uint256 newMinBond` |
+| `BondRequiredUpdated` | `bool enabled` |
+| `SlashTreasuryUpdated` | `address indexed oldTreasury, address indexed newTreasury` |
+| `IssuerBlockedUpdated` | `address indexed issuer, bool blocked` |
+
+## Errors (revert strings)
+
+| Message | Function | Condition |
+| --- | --- | --- |
+| `Bond path closed` | `bond` | `bondRequired` is `false` |
+| `Issuer blocked` | `bond` | address barred with `setIssuerBlocked` |
+| `Invalid amount` | `bond`, `proposeSlash` | zero or above `uint128` max |
+| `Unbonding` | `bond` | exit already started |
+| `Amount too large` | `bond` | total above `uint128` max |
+| `Below minimum bond` | `bond` | resulting bond below `minBond` |
+| `No bond` | `startUnbond`, `proposeSlash` | no bond for the account |
+| `Already unbonding` | `startUnbond` | exit already started |
+| `Slash pending` | `startUnbond`, `withdraw` | active slash proposal |
+| `Not unbonding` | `withdraw` | `startUnbond` not called |
+| `Unbonding delay active` | `withdraw` | `releaseAt` not reached |
+| `Invalid reason` | `proposeSlash` | empty or longer than `MAX_REASON_LENGTH` |
+| `Slash already pending` | `proposeSlash` | issuer already has an active proposal |
+| `Not the slashed issuer` | `disputeSlash` | caller is not the proposal's issuer |
+| `Proposal not active` | `disputeSlash` | resolved or lapsed |
+| `Already disputed` | `disputeSlash` | dispute already recorded |
+| `Unknown proposal` | `cancelSlash`, `executeSlash` | id does not exist |
+| `Already resolved` | `cancelSlash`, `executeSlash` | executed or cancelled |
+| `Dispute window active` | `executeSlash` | `executableAt` not reached |
+| `Proposal lapsed` | `executeSlash` | past `expiresAt` |
+| `Min bond out of bounds` | `setMinBond` | outside the bounds |
+
+A disputed proposal executed by a non-slasher reverts with the OpenZeppelin `AccessControl` missing-role message.
+
+## Roles
+
+| Role | Holder | Gates |
+| --- | --- | --- |
+| `DEFAULT_ADMIN_ROLE` | multisig | role management, `setIssuerBlocked` |
+| `PARAMETER_ROLE` | multisig at stages 0 and 1; the governance timelock from stage 1 | `setMinBond`, `setBondRequired`, `setSlashTreasury` |
+| `SLASHER_ROLE` | same as `PARAMETER_ROLE` | `proposeSlash`, `cancelSlash`, `executeSlash` of disputed proposals |
+
+Neither the admin nor governance can withdraw or redirect a bond except through the slash flow, and nobody can mint credits through this contract. On the NFT, `IssuerBond` holds `ISSUER_ADMIN_ROLE` (see [CarbonCreditNFT](/docs/contracts/carbon-credit-nft#issuer-administration)).
+
+## Caveats
+
+- **Slashing is powerful.** An issuer's loss of a bond is real money. Run it behind evidence and a documented appeals path, and at first through the multisig. The dispute flag only forces explicit slasher confirmation; it is not adjudication.
+- **A bond is not verification** of credit quality.
+- **Bonded tokens carry no votes.**
+- Existing bonds are grandfathered when `minBond` is raised. The bond is compared with the **current** `minBond` again only when a slash executes: if the remaining bond is below it, the bond-granted role is revoked.
+- Not upgradeable.

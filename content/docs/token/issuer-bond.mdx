@@ -1,0 +1,78 @@
+---
+title: Issuer bond
+description: The mixed issuer model - trusted issuers granted directly by the multisig, and an optional CARB bond path with unbonding, dispute window and slashing.
+---
+
+<Callout type="warn" title="CARB is not launched yet">
+  The bond path exists in the contracts only. It stays closed until the owner opens it, and numbers marked "default" may change before launch.
+</Callout>
+
+Carbonized has two ways to hold `ISSUER_ROLE` on `CarbonCreditNFT`, the only role that can create credits. See also [Become an issuer](/docs/guides/issuer).
+
+## Mixed issuer model
+
+| | Trusted issuer | Bonded issuer |
+| --- | --- | --- |
+| How | The multisig, which holds `ISSUER_ADMIN_ROLE`, grants `ISSUER_ROLE` directly | Anyone calls `bond(amount)` with at least the minimum bond; `IssuerBond` (which holds `ISSUER_ADMIN_ROLE`) grants the role |
+| Bond | None | CARB locked in `IssuerBond` |
+| Gate | Multisig decision after off-chain review | `bondRequired` must be `true` (path open) |
+| Affected by `bondRequired` | No, never | Yes |
+
+`IssuerBond` never touches roles it did not grant: a trusted issuer that also bonds keeps its role when it unbonds.
+
+## The bond is a deterrent, not verification
+
+<Callout type="warn" title="An open bond path lets anyone willing to lock the bond create credits">
+  A bond makes misconduct costly. It does not check that a project, serial or evidence is real. The recommendation is to keep the path closed (`bondRequired = false`) until off-chain verification and an appeals process back the slasher.
+</Callout>
+
+## Lifecycle
+
+1. **Bond.** `bond(amount)` locks CARB (minimum default 10,000 CARB, owner may change it; bounds 1 to 100,000,000 whole tokens, scaled by the token's decimals; amounts onchain are base units). The deposit must arrive in full: fee-on-transfer tokens are rejected. The app approves first if needed. Bonded CARB carries no votes.
+2. **Active.** The issuer can create credits like any other issuer. If slashing leaves the bond below the minimum, the bond-granted role is revoked until the bond is topped up.
+3. **Start unbonding.** `startUnbond()` revokes the bond-granted role **immediately**.
+4. **Withdraw.** `withdraw()` is possible after the unbond delay (default 30 days; bounds 7 to 90 days; immutable) and **never while a slash proposal is active**.
+
+A change of the minimum bond applies to new bonding and top-ups only; existing bonds are grandfathered. Closing the path (`bondRequired = false`) stops new bonding; existing bonds can still unbond and be slashed. An admin can bar an address from the bond path (`setIssuerBlocked`), so an issuer revoked by the multisig cannot simply re-bond. That is an admin power, not a governance power.
+
+## Slashing
+
+Slashing uses `SLASHER_ROLE` (planned for the governance timelock after the staged handover; first the multisig).
+
+<Steps>
+<Step>
+
+### Propose
+
+`proposeSlash(issuer, amount, reason)` opens a proposal. From now on the issuer cannot start unbonding or withdraw.
+
+</Step>
+<Step>
+
+### Dispute window
+
+Default 7 days (bounds 1 to 30 days; immutable). The issuer may `disputeSlash` with an evidence hash. A disputed proposal then needs a `SLASHER_ROLE` holder to execute it; an undisputed one can be executed by anyone after the window, so a vanished slasher cannot block it. The dispute flag only forces an explicit confirmation; it is not adjudication.
+
+</Step>
+<Step>
+
+### Execute, cancel or lapse
+
+`executeSlash` removes the CARB from the bond. Destination, in order: the slash treasury if one is set; otherwise **burn**, only if the token has a working `burn(uint256)`; otherwise the **slash sink** (default `0x000000000000000000000000000000000000dEaD`, changeable by `PARAMETER_ROLE`, never zero). A slash never reverts because the token cannot burn. The `Slashed` event reports `sink` as the zero address with `burned = true` when burned, otherwise the actual destination with `burned = false`.
+
+</Step>
+</Steps>
+
+Slashing never reverts because of a missing NFT role.
+
+## In the app
+
+The Bond panel on the [Issuer page](/docs/app/issuer#bond-panel) shows the current bond, the requirement, the bond, start-unbonding and withdraw actions, pending slash proposals with a dispute-window countdown, and the slash outcome (burned or sent to the sink). It appears only when `NEXT_PUBLIC_ISSUER_BOND` is set.
+
+## Related
+
+[CARB overview](/docs/token) · [Governance](/docs/token/governance) · [Risks and legal](/docs/token/risks-and-legal)
+
+<Callout type="error" title="Legal notice">
+  Not investment advice. Not an offer or solicitation. May be restricted in your jurisdiction. No returns are promised. A bond can be lost through slashing. The contracts are unaudited. Get your own advice.
+</Callout>

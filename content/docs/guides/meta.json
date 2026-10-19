@@ -1,0 +1,12 @@
+{
+  "$schema": "..\\..\\..\\.source\\json-schema\\docs.meta.json",
+  "title": "Guides",
+  "pages": [
+    "buy-credits",
+    "sell-credits",
+    "run-an-auction",
+    "retire-credits",
+    "register-company",
+    "issuer"
+  ]
+}

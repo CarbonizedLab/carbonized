@@ -1,0 +1,141 @@
+---
+title: CarbGovernor & CarbTimelock
+description: CARB-weighted governance over bounded protocol parameters, executed through a timelock that holds only the parameter and slasher roles.
+---
+
+**CarbGovernor inherits:** `Governor`, `GovernorSettings`, `GovernorCountingSimple`, `GovernorVotes`, `GovernorVotesQuorumFraction`, `GovernorTimelockControl` (OpenZeppelin 4.9.3).
+**CarbTimelock inherits:** `TimelockController`. Sources: `contracts/token/CarbGovernor.sol`, `contracts/token/CarbTimelock.sol`.
+
+<Callout type="warn" title="Legal notice">
+  Technical reference for unaudited contracts. Not investment advice, not an offer or solicitation, no returns promised. CARB may be restricted in your jurisdiction and is not launched yet. Voting does not entitle anyone to any payment. Get your own advice.
+</Callout>
+
+Governance covers **protocol parameters only**. It has no control over credit issuance (the NFT's `ISSUER_ROLE` and `ISSUER_ADMIN_ROLE` are never given to it) and no control over user escrow (it holds no role that could touch it).
+
+## How it works
+
+- **Voting power:** [CARB](/docs/contracts/carb-token) with `ERC20Votes`. Tokens count only after `delegate(...)`. Tokens held by [`CarbStaking`](/docs/contracts/carb-staking) and [`IssuerBond`](/docs/contracts/issuer-bond) carry no votes.
+- **Clock:** the token's clock is `block.timestamp`, so `votingDelay`, `votingPeriod`, `proposalSnapshot` and `proposalDeadline` are **seconds** (timestamps), not blocks.
+- **Counting:** for / against / abstain (`GovernorCountingSimple`). Quorum is a percentage of the **total** supply at the proposal snapshot.
+- **Execution:** a succeeded proposal is queued in `CarbTimelock` and executed after the timelock delay. The timelock, not the governor, is the account that holds `PARAMETER_ROLE` and `SLASHER_ROLE` on the protocol contracts, so governance power is exactly what those roles allow.
+
+What the timelock can do (once the roles are granted at stage 1 or later, see [Roles & Security](/docs/contracts/roles-and-security#staged-decentralisation-of-the-carb-stack)):
+
+| Contract | Via role | Functions |
+| --- | --- | --- |
+| `CarbonMarketplace` | `PARAMETER_ROLE` | `setTradingFee`, `setMinPricePerTonne`, `setKYCGate`, `setFeeDiscountProvider` |
+| `CarbStaking` | `PARAMETER_ROLE` | `setTierThresholds`, `setTierDiscounts` |
+| `IssuerBond` | `PARAMETER_ROLE` | `setMinBond`, `setBondRequired`, `setSlashTreasury` |
+| `IssuerBond` | `SLASHER_ROLE` | `proposeSlash`, `cancelSlash`, `executeSlash` |
+| Governor / timelock | self | bounded settings, `setTargetAllowed`, `updateDelay` |
+
+Every setter keeps its own hard bounds, so a passed proposal cannot go outside them (for example trading fee at most 1 %).
+
+## CarbGovernor
+
+### Constructor
+
+```solidity
+constructor(
+    IVotes token_,
+    TimelockController timelock_,
+    uint256 votingDelay_,
+    uint256 votingPeriod_,
+    uint256 proposalThreshold_,
+    uint256 quorumPercent_,
+    address[] memory initialTargets
+)
+```
+
+The governor is named `CarbGovernor`. The constructor allowlists itself, the timelock and every address in `initialTargets` (the deployment helper passes marketplace, staking and bond). The bounds below are checked at construction and on every update, so the constructor can revert with their messages; `allowedTargets` rejects the zero address (`Invalid target`).
+
+### Bounds (constants)
+
+| Name | Value |
+| --- | --- |
+| `MIN_VOTING_DELAY` / `MAX_VOTING_DELAY` | 1 hour / 7 days |
+| `MIN_VOTING_PERIOD` / `MAX_VOTING_PERIOD` | 1 day / 14 days |
+| `MAX_PROPOSAL_THRESHOLD` | 50,000,000 CARB |
+| `MIN_QUORUM_PERCENT` / `MAX_QUORUM_PERCENT` | 1 / 20 |
+
+<Callout title="Default in deployment helper, owner may change before launch">
+  `scripts/lib/governance-setup.js` uses a voting delay of 1 day, a voting period of 5 days, a proposal threshold of 1,000,000 CARB, a quorum of 4 % and a timelock delay of 2 days. These are owner parameters, bounded onchain, and may change before launch. Published values will be listed at launch (`contracts/contracts/docs/TOKEN.md`, parameters table).
+</Callout>
+
+### Target allowlist
+
+`allowedTargets(address)` is a public mapping. `propose` reverts unless **every** target is allowlisted and **every** `values[i]` is zero, so a proposal cannot call other contracts or carry ETH. The allowlist is a second line of defence: even if governance voted to allowlist the NFT, executing an issuance grant would fail because the timelock holds no NFT role (covered by a test).
+
+### Functions
+
+| Function | Access | Behavior |
+| --- | --- | --- |
+| `propose(targets, values, calldatas, description)` | proposer with at least `proposalThreshold()` votes | Enforces allowlist and zero value, then the OpenZeppelin proposal logic |
+| `castVote`, `castVoteWithReason`, `castVoteWithReasonAndParams`, `castVoteBySig` | voters | support `0` against, `1` for, `2` abstain |
+| `queue(targets, values, calldatas, descriptionHash)` | anyone | Schedules a succeeded proposal in the timelock |
+| `execute(targets, values, calldatas, descriptionHash)` | anyone | Executes a queued proposal through the timelock once the delay has passed |
+| `cancel(targets, values, calldatas, descriptionHash)` | proposer, while the proposal is pending | Cancels the proposal |
+| `state(proposalId)` | view | `Pending`, `Active`, `Canceled`, `Defeated`, `Succeeded`, `Queued`, `Expired`, `Executed` |
+| `proposalSnapshot`, `proposalDeadline`, `proposalVotes`, `hasVoted`, `getVotes`, `quorum(timepoint)`, `votingDelay`, `votingPeriod`, `proposalThreshold`, `quorumNumerator`, `quorumDenominator`, `timelock`, `token` | view | standard OpenZeppelin getters |
+| `setTargetAllowed(target, allowed)` | `onlyGovernance` (a passed proposal) | Adds or removes an allowlisted target; `Invalid target` for the zero address |
+| `setVotingDelay`, `setVotingPeriod`, `setProposalThreshold`, `updateQuorumNumerator`, `updateTimelock` | `onlyGovernance` | Bounded settings; `updateTimelock` is the standard `GovernorTimelockControl` function |
+
+Hash a proposal with `hashProposal(targets, values, calldatas, keccak256(bytes(description)))`.
+
+### Events
+
+| Event | Parameters |
+| --- | --- |
+| `TargetAllowanceUpdated` | `address indexed target, bool allowed` |
+| `ProposalCreated` | standard OpenZeppelin event (proposal id, proposer, targets, values, signatures, calldatas, `voteStart`, `voteEnd`, description) |
+| `VoteCast`, `VoteCastWithParams` | standard: voter, proposal id, support, weight, reason |
+| `ProposalQueued` | `uint256 proposalId, uint256 eta` |
+| `ProposalExecuted` | `uint256 proposalId` |
+| `ProposalCanceled` | `uint256 proposalId` |
+| `VotingDelaySet`, `VotingPeriodSet`, `ProposalThresholdSet` | `GovernorSettings` events |
+| `QuorumNumeratorUpdated` | `uint256 oldQuorumNumerator, uint256 newQuorumNumerator` |
+| `TimelockChange` | `address oldTimelock, address newTimelock` |
+
+### Errors (revert strings)
+
+| Message | Where |
+| --- | --- |
+| `Target not allowed` | `propose` with a non-allowlisted target |
+| `ETH value not allowed` | `propose` with a non-zero value |
+| `Invalid target` | `setTargetAllowed`, constructor allowlist |
+| `Voting delay out of bounds` | delay outside 1 hour to 7 days |
+| `Voting period out of bounds` | period outside 1 day to 14 days |
+| `Threshold too high` | proposal threshold above 50,000,000 CARB |
+| `Quorum out of bounds` | quorum outside 1 % to 20 % |
+
+Everything else is standard OpenZeppelin `Governor:` / `TimelockController:` reverts (for example `Governor: proposer votes below proposal threshold`, `Governor: proposal not successful`).
+
+## CarbTimelock
+
+An OpenZeppelin `TimelockController` whose minimum delay is **bounded**, so governance can never collapse the public exit window to zero.
+
+```solidity
+constructor(uint256 minDelay, address[] memory proposers, address[] memory executors, address admin)
+```
+
+| Item | Behavior |
+| --- | --- |
+| `MIN_DELAY_FLOOR` / `MAX_DELAY_CAP` | 1 day / 30 days |
+| Constructor | reverts `Delay out of bounds` if `minDelay` is outside the range |
+| `getMinDelay()` | overridden; returns the bounded delay tracked by this contract. `schedule` and `scheduleBatch` use it. |
+| `updateDelay(newDelay)` | overridden; only the timelock itself (`TimelockController: caller must be timelock`), reverts `Delay out of bounds`; emits `MinDelayChange` |
+| `schedule`, `scheduleBatch`, `execute`, `executeBatch`, `cancel` | standard `TimelockController` (roles `PROPOSER_ROLE`, `EXECUTOR_ROLE`, `CANCELLER_ROLE`) |
+| Events | standard (`CallScheduled`, `CallExecuted`, `Cancelled`, `MinDelayChange`, ...) |
+
+The timelock is intended to be **self-administered**: pass `admin = address(0)`, or renounce `TIMELOCK_ADMIN_ROLE` after wiring. The deployment helper (`deployGovernance`) grants the governor `PROPOSER_ROLE` and `CANCELLER_ROLE`, grants `EXECUTOR_ROLE` to `address(0)` (anyone may execute a queued operation) unless configured otherwise, and renounces the deployer's temporary `TIMELOCK_ADMIN_ROLE`.
+
+It holds no credit-issuance, escrow or admin role. `assertGovernanceBoundaries` in the same helper fails if the timelock ever holds a forbidden role.
+
+## Caveats
+
+- **Governance capture.** One token, one vote. If the owner, treasury or a few holders control most delegated supply, they control the outcome. Bounds and the least-privilege timelock limit what a captured vote can do (fee at most 1 %, discount at most 50 % of the fee, no issuance, no escrow). They do not prevent slashing bonded issuers or changing the KYC-gate and minimum-price parameters.
+- **Quorum vs. non-voting supply.** Quorum is a fraction of total supply, including treasury, staked and bonded tokens that cannot vote. Calibrate `quorumPercent` against the real distribution of **delegated** tokens or governance can stall.
+- **Delegation is required.** Undelegated tokens have no votes.
+- **Timestamps.** The sequencer sets `block.timestamp` on an L2 within bounded drift; durations are days, so drift is immaterial, but a sequencer outage delays proposal progress.
+- **Emergency powers stay off-governance.** `PAUSER_ROLE` intentionally stays with a fast multisig at every stage.
+- Not upgradeable.

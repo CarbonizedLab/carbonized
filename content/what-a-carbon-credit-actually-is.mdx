@@ -1,0 +1,92 @@
+---
+title: "What a Carbon Credit Actually Is (and Isn't)"
+description: "A plain-language explanation of what one tonne of CO2e on a carbon credit represents, what it takes to issue one, and the common misunderstandings that make credits look either magical or worthless."
+date: 2026-08-03
+tags: ['carbon-credits', 'basics', 'verification', 'additionality']
+image: /images/blog/what-a-carbon-credit-actually-is.jpg
+imageCredit: "Photo: Vyacheslav Argenberg / Wikimedia Commons (CC BY 4.0) — https://commons.wikimedia.org/wiki/File:Cat_Tien_Park,_Vietnam,_Tree_canopy_over_blue_sky.jpg"
+author: Carbonized
+---
+
+**TL;DR:** A carbon credit is a verified claim that one tonne of carbon dioxide equivalent (tCO2e) was avoided or removed, recorded in a registry so that nobody else can claim the same tonne. It is not a licence to pollute, not a physical object, and not automatically good or bad. Its value depends entirely on the quality of the evidence behind it.
+
+We are building Carbonized, a carbon-credit marketplace, and the most common question we get is the simplest one: what exactly am I buying? Here is the honest answer, including the parts that make the industry uncomfortable.
+
+## The unit: one tonne of CO2e
+
+Greenhouse gases are not all equal. Methane traps far more heat per tonne than carbon dioxide over a short horizon, and refrigerant gases can be thousands of times stronger. To compare them, accounting standards convert every gas into "carbon dioxide equivalent" using global warming potentials. A credit is denominated in that common unit: one credit, one tCO2e.
+
+The credit itself is a record, not a substance. Nobody ships a tonne of avoided gas to you. What you receive is a serial-numbered entry saying that a specific project, in a specific place, during a specific year, achieved a measured result that an independent party checked.
+
+## Avoidance versus removal
+
+Credits come from two broad families of activity.
+
+- **Avoidance or reduction credits** represent emissions that would have happened but did not. Examples include replacing a fossil-fuel power source with wind or solar in a setting where that was not already the plan, or protecting a forest that was under credible threat of clearing.
+- **Removal credits** represent carbon actively taken out of the atmosphere and stored, for instance by growing new forest, restoring mangroves, or capturing carbon and storing it underground.
+
+The distinction matters because the claims are different. A removal is a physical subtraction. An avoidance is a comparison against a counterfactual, which is a story about what would have happened otherwise. Counterfactuals are harder to prove, and that is where most of the controversy lives.
+
+## What has to be true for a credit to be credible
+
+Reputable programmes, such as Verra's Verified Carbon Standard (VCS) and the Gold Standard, ask the same handful of questions of every project.
+
+### Additionality
+
+Would the reduction have happened anyway? If a wind farm was already profitable and permitted without carbon revenue, selling credits for it does not cause any extra reduction. Additionality tests try to establish that carbon finance made the difference.
+
+### Baseline and measurement
+
+A project must state what emissions would have been without it and then measure what actually happened. The gap is the claimed reduction. Sloppy baselines inflate that gap.
+
+### Permanence
+
+Some projects store carbon in trees or soil, which can burn, die, or be cleared decades later. Programmes handle this with buffer pools (a share of credits set aside as insurance) and monitoring over long periods. A credit from a process with a short, reversible storage time is worth less than one with a durable storage mechanism.
+
+### Leakage
+
+Protecting one forest is pointless if the loggers simply move to the next valley. Projects must account for emissions displaced outside their boundary.
+
+### Independent verification
+
+A third-party auditor reviews the project design and, periodically, the monitoring data. Only then does the registry issue credits with serial numbers, tied to a vintage: the year the reduction occurred.
+
+## What a credit is not
+
+### It is not a licence to pollute
+
+Buying a credit does not erase your emissions from the atmosphere's perspective; it funds or claims a separate reduction elsewhere. That is why the strongest corporate guidance puts offsets *after* real cuts to your own emissions, reserved for the residual that is genuinely hard to eliminate. If you want to understand your own footprint first, see our guide to [Scope 1, 2 and 3 inventories](/blog/scope-1-2-3-first-emissions-inventory).
+
+### It is not one commodity
+
+A credit from a cookstove programme and a credit from a direct-air-capture plant share a unit but almost nothing else. Price differences of an order of magnitude are normal, and they usually reflect real differences in permanence, evidence quality, and co-benefits. Treating all credits as interchangeable is the fastest route to buying something you would not want to defend publicly.
+
+### It is not an allowance
+
+This is a frequent confusion. An *allowance* in a cap-and-trade system is a permit issued by a regulator that lets a covered company emit one tonne. A *credit* is a unit created by a project that reduced or removed emissions. Compliance systems sometimes let credits be used in limited amounts alongside allowances, but they are different instruments. We cover the Chinese version of this split in [China's carbon market in plain English](/blog/chinas-carbon-market-ets-vs-ccer).
+
+### It is not ownable forever
+
+A credit has a lifecycle: issued, held or traded, and finally retired. Once retired, it is gone. It cannot be sold again, because the claim has been used. If a credit could be claimed twice, the market would be counting reductions that never happened, which is the problem we dig into in [double counting](/blog/double-counting-and-on-chain-registries).
+
+## Where a blockchain helps, and where it does not
+
+Carbonized represents each credit as an onchain token with its metadata: methodology, vintage, tonnes, and a serial number. The ledger makes ownership and retirement transparent and hard to rewrite. Each registered serial can be minted only once, which closes one specific route to duplication.
+
+What a blockchain cannot do is verify the physical world. If an issuer lies about a baseline, a token faithfully records the lie. The trust anchor is still the verification process and whoever is authorised to issue. In Carbonized's current testnet, that role is held by the deployer, and several verification pieces are mocked; the [launch post](/blog/carb-testnet-launch-robinhood-chain) is explicit about this. For how credits are modelled in the contracts, see the [CarbonCreditNFT reference](/docs/contracts/carbon-credit-nft) and the [glossary](/docs/glossary).
+
+## A practical checklist for evaluating a credit
+
+When you look at any credit, on any platform, ask:
+
+1. Which standard issued it, and can I find the serial number in that registry?
+2. Is it avoidance or removal, and how reversible is the storage?
+3. What is the vintage, and is it recent enough for my purpose?
+4. How is additionality argued, in plain words?
+5. Will it be retired in my name, with a public record?
+
+If a seller cannot answer these in a few sentences, treat that as information.
+
+## Takeaway
+
+A carbon credit is a carefully audited receipt for one tonne of climate benefit, not a magic eraser. It is only as trustworthy as the methodology, the verifier, and the registry that prevents it from being used twice. Understanding that makes you a better buyer, a better critic, and a more honest participant in the market.

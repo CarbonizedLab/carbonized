@@ -1,0 +1,69 @@
+---
+title: Roadmap and limitations
+description: What Carbonized does not do yet and the work needed before relying on it for production use.
+---
+
+Carbonized is in **beta**. The contracts are deployed on Robinhood Chain mainnet (chain `4663`) as a controlled launch: administration is held by a Safe wallet, access is KYC-gated, and the public rollout waits for an independent audit. This page lists what is live, what is next and what is not built yet, so you can judge the current state accurately. For contract-level details see [Known limitations and security notes](/docs/contracts/roles-and-security#known-limitations-and-security-notes).
+
+## Launch stages
+
+| Stage | Status | What it means |
+| --- | --- | --- |
+| 1 Controlled mainnet | Live (beta) | Contracts deployed on chain `4663`, USDG settlement, admin roles held by a Safe wallet, deployer holds no roles. |
+| 2 Verification onboarding | In preparation | Wallet-bound KYC through a provider-reviewed flow, with eligibility set onchain by the multisig. |
+| 3 Issuer and inventory | Next | First authorised issuers and clearly labelled inventory. Demo entries are marked as demo and are not verified credits. |
+| 4 Independent audit | Planned | External security audit of the contracts and app, published before any public rollout. |
+| 5 Registry attestation | Planned | External registry evidence, serial and freshness checks, public provenance links. |
+| 6 CARB utility launch | Planned | The official contract address is published only after the token is live and verifiable on the explorer. |
+
+Statuses describe the current path, not delivery dates.
+
+## Testnet versus mainnet readiness
+
+| Area | Testnet | Mainnet (chain `4663`) |
+| --- | --- | --- |
+| Payment token | Mock payment token with a public `mint` | Real payment token (6 decimals), address supplied by the operator |
+| Chainlink Functions router | `MockFunctionsRouter` | Real router and subscription required; not configured in this repository |
+| Admin keys | One deployer key holds all roles | Roles are held by a Safe wallet; the deployer holds none, see [Robinhood Chain Mainnet](/docs/deployment/robinhood-mainnet) |
+| Audit | None | None published yet |
+| Mock contracts | Present | Must not be deployed |
+
+## Not built yet
+
+- **Professional audit.** The contracts and the app went through an **internal automated review, not a professional audit**. It led to the fixes listed in [Known limitations and security notes](/docs/contracts/roles-and-security#known-limitations-and-security-notes) (payment-token decimals, pull payments, registry privacy, no faucets, serial and wrapping rules, oracle over-issuance guards). Until an independent audit is published, treat all deployments as unaudited.
+- **Multisig administration.** On mainnet the roles are held by a Safe wallet with a single signer today, and the deployer has renounced all of them. A multi-signer threshold is planned before any public rollout. Testnet deployments still use a single deployer key.
+- **Live oracles.** Price, emission verification and registry checks are Chainlink Functions consumers: an admin uploads the JavaScript source onchain with `setSource`, sets the operator-chosen data endpoints, and can attach DON-hosted secrets. They need a real Functions router, DON, funded subscription and configuration, none of which are in this repository. The testnet deployment uses a mock router, so these requests do not complete there. The price oracle also has a manual fallback (`reportPrice`, `ORACLE_REPORTER_ROLE`); the app labels the price card **Oracle** or **Manual report**. The price oracle is not consumed by any contract; the app only shows it as an indicative value.
+- **Independent credit verification.** The NFT does not call the oracle contracts. A credit is created by an `ISSUER_ROLE` holder, who supplies the registry serial and an evidence hash. `RegistrySync` is advisory and not enforced onchain, so the quality of issuance depends on who holds `ISSUER_ROLE`. The [issuer onboarding policy](/docs/guides/issuer) and the public issuer list on the [Issuer page](/docs/app/issuer) reduce, but do not remove, that trust.
+- **Issuer controls onchain.** There is no per-issuer issuance cap, no timelock on role changes and no onchain issuer profile (name, registry accounts). The issuer list is the set of `ISSUER_ROLE` holders; applications and evidence review are a manual, off-chain process run by the operator.
+- **More standards in the order book.** The marketplace trades one carbon token (Verra `VERRA_VCS`). Gold Standard and national-registry (`ICM_COMPLIANCE`) pools exist as tokens but are not tradable in the same market.
+- **AMM in the UI.** `addLiquidity`, `removeLiquidity` and `swap` exist in the contract but are not wired into the web app.
+- **Auction hardening.** Auctions have no minimum bid increment or anti-sniping extension, and the marketplace cannot detect wash trading between wallets controlled by the same person (self-bidding and self-filling from one address are rejected onchain).
+- **KYB review workflow.** A `VERIFIER_ROLE` account can mark a company as verified onchain (bound to the profile hash that was reviewed), but there is no review workflow in the app yet.
+- **KYC that follows tokens.** Marketplace KYC is a per-address flag and does not follow CCT once it is transferred.
+- **Off-chain depository.** The optional backend for a depository is not part of this repository's deployment; leave `NEXT_PUBLIC_BACKEND_URL` empty unless you operate one.
+- **CARB utility token (planned, not committed).** CARB is not launched yet. The contracts for fee tiers, an optional issuer bond and parameter governance are in the repository, unaudited, and launch depends on legal advice and permits. See the [CARB section](/docs/token).
+- **China market support.** National-registry integration (for example CCER) and regional grid emission factors are on the roadmap; the tracker currently uses an editable default grid factor.
+
+## Current status
+
+| Area | Status |
+| --- | --- |
+| Public deployment | Robinhood Chain mainnet (`4663`), beta, controlled access |
+| Testnet | Available for rehearsal on chain `46630` |
+| Admin | Safe wallet (single signer for now); deployer holds no roles |
+| Payment token | USDG (6 decimals) on mainnet; mock token on testnet |
+| Languages | English and Chinese |
+| Audit | None published |
+
+## CARB utility stages
+
+Planned and not committed; no dates. Staged decentralisation per the token specification (details in [Governance](/docs/token/governance)):
+
+| Stage | Planned state |
+| --- | --- |
+| 0 Bootstrap | Token launched, staking and optionally the bond deployed. The multisig holds every role, including parameter and slashing roles. |
+| 1 Dual control | Voting is live; the timelock also receives the parameter and slasher roles. The multisig keeps all roles and can revoke them. |
+| 2 Governed parameters | After a trial period without incident and with a distributed, delegated supply, the multisig renounces its parameter and slasher roles. It keeps the guardian, pause, KYC, fee-withdrawal and issuer-admin powers. |
+| 3 Optional | Only with legal advice and community support: further low-risk roles. Never issuance, oracle writes or user escrow. |
+
+Each step depends on audit, legal advice and permits that are not in place yet. CARB promises no returns; see [Risks and legal](/docs/token/risks-and-legal).

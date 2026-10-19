@@ -1,0 +1,77 @@
+---
+title: Networks
+description: Supported chains, how the app picks its target chain, and how to add Robinhood Chain (mainnet and testnet) to a wallet.
+---
+
+## Target chain selection
+
+The app targets exactly one chain, chosen from `NEXT_PUBLIC_NETWORK`:
+
+| `NEXT_PUBLIC_NETWORK` | Chain | Id |
+| --- | --- | --- |
+| `robinhood-mainnet` | Robinhood Chain Mainnet | `4663` |
+| `robinhood` (alias `robinhood-testnet`) | Robinhood Chain Testnet | `46630` |
+| `hardhat` | Hardhat local | `31337` |
+| `polygon` | Polygon | `137` |
+| `amoy` / `mumbai` | Polygon Amoy | `80002` |
+| anything else | Sepolia | `11155111` |
+
+If the variable is unset it defaults to `hardhat` in development and `sepolia` otherwise. When the wallet is on another chain, the header button shows **Switch to &lt;chain name&gt;**.
+
+<Callout type="warn" title="Testnet / unaudited banner">
+  A red/amber "Testnet / unaudited" banner is shown on the landing page and in the app whenever `NEXT_PUBLIC_NETWORK` is not `robinhood-mainnet`. The contracts have not been audited by an independent firm. See [Robinhood Chain Mainnet](/docs/deployment/robinhood-mainnet).
+</Callout>
+
+<Callout type="warn">
+  The app ships no public mainnet deployment addresses: you or the operator supply them with the `NEXT_PUBLIC_*` variables. Only Robinhood Chain Testnet has a public (historic) deployment. `CarbonCreditNFT` (about 25.5 KiB with the default compiler settings) only deploys on chains that accept code above 24 KiB.
+</Callout>
+
+## Robinhood Chain Mainnet
+
+Arbitrum Orbit L2 with ETH as gas. Payments settle in real payment token (6 decimals).
+
+| Field | Value |
+| --- | --- |
+| Network name | Robinhood Chain |
+| Chain id | `4663` |
+| Currency | ETH |
+| RPC URL | `https://rpc.mainnet.chain.robinhood.com` |
+| Fallback RPC / logs RPC | `https://robinhood-rpc.publicnode.com` (default for `NEXT_PUBLIC_LOGS_RPC_URL`) |
+| Block explorer | `https://robinhoodchain.blockscout.com` |
+
+## Robinhood Chain Testnet
+
+| Field | Value |
+| --- | --- |
+| Network name | Robinhood Chain Testnet |
+| Chain id | `46630` |
+| Currency | ETH |
+| RPC URL | `https://rpc.testnet.chain.robinhood.com/rpc` |
+| Fallback RPC / logs RPC | `https://robinhood-sepolia-rpc.publicnode.com` (default for `NEXT_PUBLIC_LOGS_RPC_URL`) |
+| Block explorer | `https://explorer.testnet.chain.robinhood.com` |
+| Faucet (ETH only) | `https://faucet.testnet.chain.robinhood.com` |
+
+The official testnet RPC sometimes times out. Set `NEXT_PUBLIC_RPC_URL` to the fallback if reads or writes stall. The explorer used for links can be overridden with `NEXT_PUBLIC_EXPLORER_URL`.
+
+### Add it manually
+
+In MetaMask: **Settings → Networks → Add network manually**, then enter the fields above for the network you use. When the app's target chain is a Robinhood chain and your wallet is on another chain, the header shows **Switch to Robinhood Chain** (or **Robinhood Chain Testnet**), which requests a chain switch from the wallet.
+
+## Hardhat local
+
+| Field | Value |
+| --- | --- |
+| Chain id | `31337` |
+| RPC URL | `http://127.0.0.1:8545` |
+| Currency | ETH |
+
+See [Local Hardhat](/docs/deployment/local-hardhat).
+
+## Token decimals
+
+| Token | Decimals | Notes |
+| --- | --- | --- |
+| CCT (`CarbonCreditToken`) | `18` | 1 tonne of CO2 = `1e18` base units. Fixed in the contract; the marketplace constructor rejects a carbon token that is not 18 decimals. |
+| Payment token (payment token) | read from `decimals()` | Real payment token on mainnet has 6 decimals. The app reads `decimals()` of `NEXT_PUBLIC_payment token_ADDRESS` once and never assumes 18. The marketplace stores the same value as `paymentDecimals` (2 to 18 accepted). |
+
+Prices are expressed in payment-token base units per tonne, so with 6-decimal payment token a price of `$15` per tonne is `15000000`. The cost of a trade is `amount * pricePerTonne / 1e18`. The mock payment token used on testnet follows the decimals it was deployed with; do not assume it matches mainnet.

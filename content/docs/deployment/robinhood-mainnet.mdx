@@ -1,0 +1,175 @@
+---
+title: Robinhood Chain Mainnet
+description: Accurate checklist for a Carbonized mainnet deployment on Robinhood Chain - funding, USDG, oracle configuration, registry endpoints, the optional CARB token stack, role handover, verification and Vercel variables.
+---
+
+<Callout type="warn" title="Status: unaudited">
+  The Carbonized contracts have **not** been audited by an independent firm. Do not treat a mainnet deployment as safe for material value until an audit report is published. An internal review produced the contract changes described in [Roles and security](/docs/contracts/roles-and-security); that is not a substitute for an external audit. The web app shows a red/amber "Testnet / unaudited" banner on every build whose `NEXT_PUBLIC_NETWORK` is not `robinhood-mainnet`; keep an audit status notice visible until an audit is published.
+</Callout>
+
+This page summarises the order of work for a mainnet deployment: readiness gates, multisig, USDG, Chainlink Functions, the dry run, the broadcast, post-deploy verification and monitoring.
+
+The mainnet script is `contracts/scripts/deploy/20_deploy_mainnet.js` (`npm run deploy:mainnet`, Hardhat network `robinhoodMainnet`). It refuses any chain id other than `4663`, deploys no mocks, does a dry run by default and broadcasts only with `CONFIRM_MAINNET=yes`. The CARB token stack is **not** deployed by that script; see step 6.
+
+## Network facts
+
+| Item | Value |
+| --- | --- |
+| Chain id | `4663` |
+| Currency | ETH (18 decimals), used for gas |
+| RPC (official) | `https://rpc.mainnet.chain.robinhood.com` |
+| RPC (fallback) | `https://robinhood-rpc.publicnode.com` |
+| Explorer | `https://robinhoodchain.blockscout.com` |
+| Payment token | Real USDG (6 decimals). The operator supplies its address. |
+
+## Checklist
+
+<Steps>
+<Step>
+
+### 1. Fund ETH and prepare keys
+
+Use a **fresh deployer key** that holds only gas funds, never a testnet key. The owner funds the deployer with enough ETH on chain `4663` for about 10 contract deployments and about 40 role and configuration transactions. Create a contract multisig on chain `4663` (threshold at least 2-of-3, separate hardware wallets) and send one test transaction through it. The script rejects an address without code and the deployer's own address as admin. The deployer key belongs only in a git-ignored `.env` used by Hardhat.
+
+</Step>
+<Step>
+
+### 2. Real USDG from the official source
+
+Take the canonical USDG address for Robinhood Chain from the issuer's or chain's official documentation, cross-check it on the explorer (`symbol()` is `USDG`, `decimals()` is `6`, verified source) and set it as `MAINNET_USDG`. This documentation lists no address. The script re-checks code, decimals and symbol before sending anything.
+
+</Step>
+<Step>
+
+### 3. Oracle contracts: Functions router, config, source, price sources, secrets
+
+`EmissionVerifier`, `RegistrySync` and `CarbonPriceOracle` are Chainlink Functions consumers. First confirm in Chainlink's documentation that Functions is available on chain `4663` and take the router address and DON id for that chain from there. If it is not available, do not deploy against a stand-in; `CarbonPriceOracle` still works through the manual reporter fallback, while the other two cannot run.
+
+1. Deploy with the real router (`FUNCTIONS_ROUTER`); constructors revert on a zero router.
+2. Create and fund a Functions subscription (ideally owned by the multisig) and add the three contracts as consumers. Until then requests revert at the router.
+3. `setFunctionsConfig(donId, subscriptionId, gasLimit)` on each contract (callback gas 200,000 to 1,000,000).
+4. `setSource(...)` with the reference source for each contract (`scripts/functions/sources.js`), and compare `sourceHash()` with the expected hash.
+5. `CarbonPriceOracle.setPriceSources([...])` with 1 to 5 operator-chosen HTTPS endpoints. Until set, price requests revert with `No price sources`.
+6. If a data provider needs an API key, upload the secrets to the DON and attach them with `setDONHostedSecrets(slotId, version)`; always set `allowedUrlPrefix` to the host that deserves the key. The reference sources need no secrets.
+7. Optional manual fallback: the admin grants `ORACLE_REPORTER_ROLE` to the reporting multisig (it is never granted by a constructor). Then the app labels the price card **Manual report** when `lastPriceManual` is true.
+
+Full details: `contracts/scripts/functions/README.md` and `audit/abi-changes-oracle.md`. The mainnet script does not give `EmissionVerifier` the issuer role unless `ENABLE_ORACLE_ISSUANCE=yes`; leave issuance through the oracle path off until the sources, secrets and data semantics are finished, audited and tested.
+
+</Step>
+<Step>
+
+### 4. Registry endpoints
+
+`RegistrySync` creates its three default registries (`VERRA`, `GOLD_STANDARD`, `ICM`) **inactive and without an endpoint**. For each registry you use, call `setRegistryEndpoint(name, url)` (an `https://` URL template containing `{serial}`) and then `setRegistryStatus(name, true)`. `CarbonRegistry` is a separate contract (company and trader profiles) deployed with the multisig as admin.
+
+</Step>
+<Step>
+
+### 5. Dry run, broadcast and core handover
+
+Run `npm run deploy:mainnet` without confirmation, read the printed summary line by line (chain id, USDG, router, DON, subscription, multisig, issuers, fee, minimum price, KYC gate), then run `CONFIRM_MAINNET=yes npm run deploy:mainnet`. The script is resumable, grants every role to the multisig, has the deployer renounce every role, and throws on the first mismatch. Mainnet launch limits (defaults: 25 bps fee, KYC gate on) and the full gate list are in the runbook.
+
+</Step>
+<Step>
+
+### 6. CARB token stack (optional, only when CARB is launched)
+
+CARB is not launched yet and this step stays out of a first deployment unless the owner decides otherwise and legal advice and permits are in place. Order from section 7 of `contracts/contracts/docs/TOKEN.md`:
+
+1. `CarbToken(recipient = treasury multisig)`
+2. `CarbStaking(carb, admin = multisig, warmup, cooldown, thresholds, discounts)`
+3. `IssuerBond(carb, admin = multisig, minBond, unbondDelay, disputeWindow, bondRequired, slashTreasury)`. It is collateral/slashing only and never receives any NFT role or mint authority.
+4. `marketplace.setFeeDiscountProvider(staking)` (admin)
+5. Governance, only at stage 1: `deployGovernance`, `applyGovernanceSetup`, `assertGovernanceBoundaries` from `scripts/lib/governance-setup.js`
+
+Publish the real parameter table at launch. The defaults in the helper are suggestions that the owner may change.
+
+</Step>
+<Step>
+
+### 7. Issuance-role handover
+
+The multisig must hold the NFT admin role and the deployer must hold no role. `NATIVE_ISSUER_ROLE` is for native/oracle issuance; `EXTERNAL_ISSUER_ROLE` is separate and only for fresh RegistrySync-attested external credits. `IssuerBond` is never an issuer. Governance never receives issuance power.
+
+</Step>
+<Step>
+
+### 8. Governance stages 0, 1, 2
+
+Stage 0: the multisig holds every role. Stage 1: the timelock additionally receives `PARAMETER_ROLE` and `SLASHER_ROLE` once voting, delegation and turnout have been observed. Stage 2: only after a trial period without incident and with a distributed, delegated supply, the multisig renounces those two roles and keeps admin, pause, KYC, fee withdrawal and all issuance control. Planned and not committed; see [Governance](/docs/token/governance).
+
+</Step>
+<Step>
+
+### 9. Verify on Blockscout
+
+`npm run verify:mainnet`, then check "Contract: verified" for each address on `https://robinhoodchain.blockscout.com`. On the Read contract tabs: the deployer has no `DEFAULT_ADMIN_ROLE`, the multisig has it, `paymentToken()` is the real USDG, `paymentDecimals()` is `6`, nothing is paused. Run a smoke test with tiny amounts, and set up monitoring before opening the app.
+
+</Step>
+<Step>
+
+### 10. Environment variables for Vercel
+
+`node scripts/update-carb-env.js --network robinhoodMainnet` writes the contract addresses into the app's `.env.local`; copy the same values into Vercel (they are inlined at build time) and redeploy. See below.
+
+</Step>
+</Steps>
+
+## No mocks on mainnet
+
+Mainnet must not contain `MockERC20` (mock USDG with a public `mint`) or `MockFunctionsRouter`. The marketplace constructor reads `decimals()` of the USDG (2 to 18 accepted) and stores it as the immutable `paymentDecimals`. Never point a production deployment at mock USDG, a mock oracle or a mock router.
+
+## Environment variables
+
+```bash
+NEXT_PUBLIC_NETWORK=robinhood-mainnet
+NEXT_PUBLIC_CHAIN_ID=4663
+NEXT_PUBLIC_RPC_URL=https://rpc.mainnet.chain.robinhood.com
+NEXT_PUBLIC_LOGS_RPC_URL=https://robinhood-rpc.publicnode.com   # default for 4663
+NEXT_PUBLIC_EXPLORER_URL=https://robinhoodchain.blockscout.com  # default for 4663
+NEXT_PUBLIC_REOWN_PROJECT_ID=your_reown_project_id
+NEXT_PUBLIC_USDG_ADDRESS=0x...   # real USDG, supplied by you
+NEXT_PUBLIC_CARBON_CREDIT_NFT=0x...
+NEXT_PUBLIC_CARBON_CREDIT_TOKEN=0x...
+NEXT_PUBLIC_CARBON_CREDIT_TOKEN_GOLD_STANDARD=0x...
+NEXT_PUBLIC_CARBON_CREDIT_TOKEN_ICM_COMPLIANCE=0x...
+NEXT_PUBLIC_CARBON_MARKETPLACE=0x...
+NEXT_PUBLIC_CARBON_REGISTRY=0x...
+NEXT_PUBLIC_CARBON_PRICE_ORACLE=0x...
+NEXT_PUBLIC_EMISSION_VERIFIER=0x...
+NEXT_PUBLIC_DEPLOY_BLOCK=your_first_block
+NEXT_PUBLIC_CONTACT_EMAIL=you@example.com
+NEXT_PUBLIC_BACKEND_URL=         # leave empty unless you run an off-chain depository backend
+
+# Optional, only after CARB is launched (unset = "CARB is not live yet" in the app)
+NEXT_PUBLIC_CARB_TOKEN=0x...
+NEXT_PUBLIC_CARB_EXTERNAL=true   # only when CARB is an external (launchpad) token
+NEXT_PUBLIC_CARB_VOTES=0x...      # only when an external CARB needs the voting wrapper
+NEXT_PUBLIC_CARB_STAKING=0x...
+NEXT_PUBLIC_ISSUER_BOND=0x...
+NEXT_PUBLIC_GOVERNOR=0x...
+NEXT_PUBLIC_TIMELOCK=0x...
+```
+
+See [Environment variables](/docs/deployment/environment-variables) for every variable. Leave `NEXT_PUBLIC_BACKEND_URL` empty unless you operate a backend: when it is set, the company registration flow sends the registration details, including email and phone, to that server.
+
+## Post-deploy checklist
+
+- [ ] The "Testnet / unaudited" banner is **absent** on the landing page and in `/app` (it shows whenever `NEXT_PUBLIC_NETWORK` is not `robinhood-mainnet`), and an audit status notice is visible until an audit is published.
+- [ ] The wallet switches to chain id `4663` and the explorer links open `robinhoodchain.blockscout.com`.
+- [ ] `usdg.decimals()` returns `6`, `marketplace.paymentDecimals()` returns `6`, and a `$15` price per tonne is `15000000` base units.
+- [ ] `marketplace.paymentToken()` equals `NEXT_PUBLIC_USDG_ADDRESS`.
+- [ ] `hasRole` shows the multisig holds every admin role and the deployer holds none; native and external issuer lists are disjoint.
+- [ ] `CarbonRegistry` and `IssuerBond` have no NFT issuance role.
+- [ ] The three oracle consumers are on the Functions subscription, `sourceHash()` matches the expected hash, and the subscription holds a LINK buffer.
+- [ ] No page offers starter credits, a faucet or a "mint test USDG" action.
+- [ ] If CARB is configured: the five CARB variables match the deployed addresses, and the Token and Governance pages show live data. If not, they show "CARB is not live yet".
+- [ ] Open a certificate page (`/app/certificates/<txHash>`) for a real retirement: it is green only when the NFT's stored certificate matches the event and the credit is issuer-backed.
+
+## Related
+
+- [Environment variables](/docs/deployment/environment-variables)
+- [Networks](/docs/wallet/networks)
+- [Roles and security](/docs/contracts/roles-and-security)
+- [CARB token](/docs/token)
+- [Roadmap and limitations](/docs/roadmap)

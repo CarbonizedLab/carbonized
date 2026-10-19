@@ -1,0 +1,116 @@
+---
+title: Environment variables
+description: The environment variables the Carbonized web app reads, with placeholder values.
+---
+
+## Web app (`.env.local`)
+
+### Onchain configuration
+
+| Variable | Required | Description |
+| --- | --- | --- |
+| `NEXT_PUBLIC_NETWORK` | yes | `robinhood-mainnet` (chain id `4663`), `robinhood` (testnet, `46630`; alias `robinhood-testnet`), `hardhat`, `polygon`, `amoy` (alias `mumbai`) or anything else for Sepolia. Default: `hardhat` in development, `sepolia` otherwise. Any value other than `robinhood-mainnet` shows the red/amber "Testnet / unaudited" banner on the landing page and in the app. |
+| `NEXT_PUBLIC_CHAIN_ID` | recommended | Chain id. Used as the chain id for contract config; `31337` triggers Hardhat address fallbacks. |
+| `NEXT_PUBLIC_RPC_URL` | recommended | HTTP RPC for the target chain. Falls back to the chain's default (Hardhat: `http://127.0.0.1:8545`). |
+| `NEXT_PUBLIC_LOGS_RPC_URL` | optional | RPC used for `eth_getLogs` history scans. Defaults to `https://robinhood-rpc.publicnode.com` for chain `4663` and `https://robinhood-sepolia-rpc.publicnode.com` for chain `46630`. Set it when `NEXT_PUBLIC_RPC_URL` is a plan that caps log ranges. |
+| `NEXT_PUBLIC_EXPLORER_URL` | optional | Block explorer base URL used for transaction and address links. Defaults: `https://robinhoodchain.blockscout.com` (mainnet), `https://explorer.testnet.chain.robinhood.com` (testnet). |
+| `NEXT_PUBLIC_CARBON_CREDIT_NFT` | yes | `CarbonCreditNFT` address |
+| `NEXT_PUBLIC_CARBON_CREDIT_TOKEN` | yes | `CarbonCreditToken` for the marketplace's methodology (Verra in the testnet deployment) |
+| `NEXT_PUBLIC_CARBON_MARKETPLACE` | yes | `CarbonMarketplace` address |
+| `NEXT_PUBLIC_CARBON_PRICE_ORACLE` | yes | `CarbonPriceOracle` address |
+| `NEXT_PUBLIC_EMISSION_VERIFIER` | yes | `EmissionVerifier` address |
+| `NEXT_PUBLIC_payment token_ADDRESS` | yes | Payment token address: real payment token (6 decimals) on mainnet, mock payment token on testnet. The app reads `decimals()` of this address once and never assumes 18. It must be the same token the marketplace was deployed with. |
+| `NEXT_PUBLIC_CARBON_REGISTRY` | yes | `CarbonRegistry` address: company/trader profiles, emissions and KYB. Without it the Company and Trader pages show a "Registry not configured" state. |
+| `NEXT_PUBLIC_DEPLOY_BLOCK` | recommended | First block to scan when rebuilding history from event logs (emissions timeline, activity feeds, portfolio events). If unset the app scans only the last 20,000 blocks. |
+| `NEXT_PUBLIC_CARBON_CREDIT_TOKEN_GOLD_STANDARD`, `NEXT_PUBLIC_CARBON_CREDIT_TOKEN_ICM_COMPLIANCE` | optional | `CarbonCreditToken` addresses for the other two methodology pools (used by pages that show all pools). |
+
+A missing or zero address shows a banner in the app shell listing the unset variables.
+
+### CARB utility token (optional)
+
+All five are **optional** and are not listed as missing in the app banner. When they are unset, the Token and Governance pages and the Issuer Bond panel show a "CARB is not live yet" state. CARB is not launched yet; see the [CARB section](/docs/token).
+
+| Variable | Required | Description |
+| --- | --- | --- |
+| `NEXT_PUBLIC_CARB_TOKEN` | optional | CARB token address: Carbonized's own `CarbToken` or an external (launchpad) token. Symbol and decimals are read from the contract. |
+| `NEXT_PUBLIC_CARB_EXTERNAL` | optional | `true` when CARB is an external token: shows the External token info line. Written by `update-carb-env.js`. |
+| `NEXT_PUBLIC_CARB_VOTES` | optional | `CarbVotes` voting wrapper (vCARB) for an external CARB without votes. When set, governance needs CARB deposited here and delegated. |
+| `NEXT_PUBLIC_CARB_STAKING` | optional | `CarbStaking` address (tier, stake, unstake, withdraw). Also enables the fee-tier info line on the Sell Credits and Marketplace pages. |
+| `NEXT_PUBLIC_ISSUER_BOND` | optional | `IssuerBond` address. Shows the Bond panel on the Issuer page. |
+| `NEXT_PUBLIC_GOVERNOR` | optional | `CarbGovernor` address (proposals, votes). |
+| `NEXT_PUBLIC_TIMELOCK` | optional | `CarbTimelock` address (queue and execute). |
+
+### Wallet, contact and backend
+
+| Variable | Required | Description |
+| --- | --- | --- |
+| `NEXT_PUBLIC_REOWN_PROJECT_ID` | for WalletConnect | Project id from `https://dashboard.reown.com`. See [Reown AppKit](/docs/wallet/reown-appkit). |
+| `NEXT_PUBLIC_CONTACT_EMAIL` | optional | Contact email shown in the app and on the legal pages. |
+| `NEXT_PUBLIC_BACKEND_URL` | optional, **leave empty by default** | Base URL of an off-chain depository backend. Registration, profiles and emissions come from the onchain registry, so the app works without a backend. Only set it if you run such a backend yourself: when it is set, the company registration flow sends the registration details, including email and phone, to that server. Its origin is added to the Content-Security-Policy automatically. |
+
+### Site and platform
+
+| Variable | Description |
+| --- | --- |
+| `NEXT_PUBLIC_APP_URL` | Optional public URL of the site. When unset, production builds use the Vercel-provided domain (`VERCEL_PROJECT_PRODUCTION_URL`, then `VERCEL_URL`). |
+| `SKIP_ENV_VALIDATION` | Set to any value to skip environment validation. Not needed for a normal deployment. |
+| `NEXT_PUBLIC_UMAMI_URL`, `NEXT_PUBLIC_UMAMI_WEBSITE_ID` | Optional analytics |
+
+<Callout title="Restart after changes">
+  `NEXT_PUBLIC_*` values are inlined by Next.js. Restart `pnpm dev` after editing `.env.local`.
+</Callout>
+
+<Callout type="info" title="Security headers and CSP">
+  Security headers and a Content-Security-Policy are set in `next.config.ts`. Custom RPC, explorer, backend and analytics origins are added to the CSP automatically from the `NEXT_PUBLIC_*` URLs above, so you do not edit the policy by hand.
+</Callout>
+
+### Optional: accounts and comments
+
+The site deploys with only the `NEXT_PUBLIC_*` variables above. Sign-in with Google and blog comments switch on automatically once **all** of the following server-only variables are set (otherwise the UI shows "Comments are not enabled yet" and `/api/auth` and `/api/comments` answer `503`). Set them in your hosting provider's secret store; never expose them to the browser or commit them.
+
+| Variable | Description |
+| --- | --- |
+| `DATABASE_URL` | Postgres connection string (Neon) |
+| `BETTER_AUTH_SECRET` | Random secret, e.g. generated with `openssl rand -base64 32` |
+| `BETTER_AUTH_URL` | Public URL of the site |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Google OAuth client credentials |
+
+### Example: Robinhood Chain Mainnet
+
+See [Robinhood Chain Mainnet](/docs/deployment/robinhood-mainnet) for prerequisites and the checklist.
+
+```bash
+NEXT_PUBLIC_NETWORK=robinhood-mainnet
+NEXT_PUBLIC_CHAIN_ID=4663
+NEXT_PUBLIC_RPC_URL=https://rpc.mainnet.chain.robinhood.com
+NEXT_PUBLIC_REOWN_PROJECT_ID=your_reown_project_id
+NEXT_PUBLIC_payment token_ADDRESS=0x...   # real payment token, supplied by the operator
+NEXT_PUBLIC_CARBON_CREDIT_NFT=0x...
+NEXT_PUBLIC_CARBON_CREDIT_TOKEN=0x...
+NEXT_PUBLIC_CARBON_MARKETPLACE=0x...
+NEXT_PUBLIC_CARBON_PRICE_ORACLE=0x...
+NEXT_PUBLIC_EMISSION_VERIFIER=0x...
+NEXT_PUBLIC_CARBON_REGISTRY=0x...
+NEXT_PUBLIC_DEPLOY_BLOCK=your_deploy_block
+```
+
+### Example: Robinhood Chain Testnet
+
+```bash
+NEXT_PUBLIC_NETWORK=robinhood
+NEXT_PUBLIC_CHAIN_ID=46630
+NEXT_PUBLIC_RPC_URL=https://rpc.testnet.chain.robinhood.com/rpc
+NEXT_PUBLIC_REOWN_PROJECT_ID=your_reown_project_id
+NEXT_PUBLIC_CARBON_CREDIT_NFT=0x...
+NEXT_PUBLIC_CARBON_CREDIT_TOKEN=0x...
+NEXT_PUBLIC_CARBON_MARKETPLACE=0x...
+NEXT_PUBLIC_CARBON_PRICE_ORACLE=0x...
+NEXT_PUBLIC_EMISSION_VERIFIER=0x...
+NEXT_PUBLIC_payment token_ADDRESS=0x...
+NEXT_PUBLIC_CARBON_REGISTRY=0x...
+NEXT_PUBLIC_DEPLOY_BLOCK=your_deploy_block
+```
+
+## Deploying the contracts
+
+Deployer keys, RPC overrides and explorer API keys are used only by your Hardhat setup, from a git-ignored `.env`. They are never read by the web app and must never be committed or placed in `NEXT_PUBLIC_*` variables. See [Robinhood Chain Mainnet](/docs/deployment/robinhood-mainnet) and [Robinhood Chain Testnet](/docs/deployment/robinhood-testnet).

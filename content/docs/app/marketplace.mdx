@@ -1,0 +1,75 @@
+---
+title: Marketplace
+description: Browse the onchain order book, buy CCT with payment token, or sell CCT into a buy order.
+---
+
+Route: `/app/marketplace`. Trades **CCT** (the ERC-20 wrapper of carbon credit NFTs, 18 decimals) against **payment token** through `CarbonMarketplace`. Prices are quoted in payment token per tonne. The app reads `decimals()` of the payment token once (6 for real payment token) and never assumes 18; onchain a price is stored in payment-token base units per tonne (`$15` = `15000000` for 6-decimal payment token) and cost is `amount × price / 1e18`.
+
+## What it shows
+
+- **Header**: a **Create listing** button (links to [Sell Credits](/docs/app/sell-credits)) and the settlement note. Every order trades **CCT-VCS** (the Verra VCS pool, the only token `CarbonMarketplace` accepts) against **payment token**. Orders do not carry a methodology, so there is no per-standard filter.
+- **Summary cards**: active listings, available volume (tonnes), volume-weighted average price and best ask, and the settlement currency (payment token).
+- **Fee tier line**: when `NEXT_PUBLIC_CARB_STAKING` is configured, an informational line shows your CARB fee tier and the discount from `feeDiscountBpsOf(wallet)`. The discount applies to the trading fee paid by the CCT seller (not to the price, not to AMM swaps). See [Staking and tiers](/docs/token/staking-and-tiers).
+- **Balance bar** (connected only): your payment token and CCT-VCS balances and a refresh button.
+- **Claim banner**: when `pendingWithdrawals(you) > 0` (a refund or proceeds the payment token refused to deliver, for example a payment token blacklist) a banner offers **Claim**, which calls `claim()` and pays the amount out.
+- **For sale** tab: open **sell** orders in a sortable table (order, trader, available volume with a fill bar, price, total value, relative expiry, **Buy**). On mobile each order is a card.
+- **Buy requests** tab: open **buy** orders with **Sell** buttons, same layout.
+- **My orders** tab (connected only): every order you created, read with `getUserOrders` (no event-window limit), with status (open, partially filled, filled, cancelled, expired), total / filled / remaining tonnes, relative expiry and **Cancel order**.
+- **Search** by trader address or order number, quick filter chips (all, partially filled, expiring in under 24 hours, KYC only) and sorting by price, volume, expiry or newest. Column headers are clickable.
+- Trader addresses are shortened with a copy button; your own orders are tagged **You** and cannot be filled by you.
+
+Public tabs list only orders that are active, have remaining volume and have not expired.
+
+### Cancelling an order
+
+**Cancel order** calls `cancelOrder(orderId)` after an inline confirmation. The contract refunds the unfilled part: your locked CCT for a sell order, or the escrowed payment token for a buy order. An order that expired but is still `isActive` stays locked until you cancel it, so it is shown as **Expired** with a **Cancel & reclaim funds** button.
+
+## Actions
+
+Both actions open a modal where you enter a tonne amount (max = remaining). The page computes `price × amount` and compares it with your balance.
+
+| Button | Approval it requests first | Contract call | Result |
+| --- | --- | --- | --- |
+| **Buy** (on a sell order) | payment token `approve(marketplace, cost)` if the freshly read allowance is lower; `cost = amount × price / 1e18` rounded **up** | `fillOrder(orderId, amount)` | You pay `cost` payment token and receive `amount` CCT. The seller receives the payment token minus the trading fee. |
+| **Sell to Order** (on a buy order) | CCT `approve(marketplace, amount)` if allowance is lower | `fillOrder(orderId, amount)` | Your CCT goes to the buyer; you receive `cost` payment token minus the fee. The buyer's payment token was escrowed when the order was created. |
+
+The page waits for each approval receipt and the fill receipt, shows toasts, fires a browser notification (if permitted), and reloads orders and balances. Approvals are exact amounts (not unlimited), the allowance is re-read before each transaction and re-approved when it is short, and **Max** fills the exact remaining wei.
+
+Fee: `tradingFeePercent` is `25` basis points (0.25 %) by default, adjustable by the admin up to `100` (1 %). The fee rate is snapshotted when an order is created, so later changes do not affect existing orders. It is deducted from the proceeds of the party who receives payment token and accrues in the contract until the fee manager withdraws it.
+
+## Preconditions and reverts
+
+| Condition | Contract message |
+| --- | --- |
+| Order was cancelled or fully filled | `Order not active` |
+| Order has an expiry in the past | `Order expired` |
+| Amount is 0 or above the remaining amount | `Invalid fill amount` |
+| Order was created with `requiresKYC` and you are not KYC-verified | `KYC required` |
+| Marketplace is paused | revert from `whenNotPaused` |
+| Not enough payment token / CCT or allowance | ERC-20 transfer revert |
+| Fill so small the cost rounds to zero | `Fill too small` |
+| Order was created with `requiresKYC` and the maker's KYC was revoked | `Maker KYC revoked` |
+
+<Callout title="KYC in the UI">
+  The app always creates orders with `requiresKYC = false` and no expiry (`expiresIn = 0`), so
+  orders made through the web app never require KYC. A KYC flag only appears on orders created
+  directly against the contract. A `KYC_ROLE` holder sets verification with `setKYCStatus`.
+</Callout>
+
+## Data sources
+
+All onchain. `getMarketplaceOrders` scans `OrderCreated` events from the last **20,000 blocks** and reads each order with `getOrder`. Orders created earlier than that window do not appear, even if still active. No backend call.
+
+## States
+
+| State | Behaviour |
+| --- | --- |
+| Wallet not connected | Orders are still readable; an amber notice asks you to connect, the balance bar is hidden and **My orders** shows a connect prompt. |
+| Loading | Skeleton cards / table. |
+| No matching orders | Empty state with a **Create listing** link (for sale tab). |
+| Order load failed | Empty state asking you to use the refresh button. |
+| Contracts not configured | Banner in the app shell; order and balance reads return empty. |
+
+## Related guides
+
+[Buy credits](/docs/guides/buy-credits) · [Sell credits](/docs/guides/sell-credits) · [Credit Requests](/docs/app/credit-requests) · [CarbonMarketplace reference](/docs/contracts/carbon-marketplace)

@@ -1,0 +1,99 @@
+---
+title: Retire credits
+description: Retire credits onchain from Carbon Wallet (NFT burn plus certificate), or use the optional off-chain depository.
+---
+
+"Retiring" permanently takes a credit out of circulation so it can be claimed against emissions. Carbonized has **two separate mechanisms**. Pick deliberately; they do not update each other.
+
+| | Onchain retire (in the app) | Depository retire (optional) |
+| --- | --- | --- |
+| Where | Carbon Wallet → NFT Credits → **Retire** | Carbon Wallet → Depository tab |
+| What changes | NFT is burned, a `RetirementCertificate` is stored, `CreditRetired` is emitted | Backend ledger marks the credit `Retired` (with reason) |
+| Needs | NFT in your wallet (not wrapped), not already retired | A backend you operate at `NEXT_PUBLIC_BACKEND_URL`; credit listed as **Active** in the depository |
+| Verifiable onchain | Yes: [Certificates](/docs/app/certificates) | No |
+
+<Callout type="warn" title="What a retirement proves">
+  An onchain retirement proves that a token was burned by your wallet, with the reason you typed. It does not prove that the underlying project is real. The reason is a **self-declared, unverified** beneficiary statement and is public and permanent, so do not put personal data in it.
+</Callout>
+
+## Path A — Retire onchain in the app
+
+<Steps>
+<Step>
+
+### Open Carbon Wallet
+
+Go to `/app/carbon-wallet` and connect your wallet; there is no password. Open the **NFT Credits** tab. Wrapped credits are held by the CCT contract and are not listed: unwrap them first on [Tokenize](/docs/app/tokenize) (Unwrap tab).
+
+</Step>
+<Step>
+
+### Retire
+
+Click **Retire** on a card (or tick several cards and click **Retire selected**), type a reason (for example `Scope 1 offset 2026`), tick the confirmation and click **Retire permanently**. The app calls `retireCredit` (one credit) or `batchRetire` (up to 50) and waits for the receipt.
+
+</Step>
+<Step>
+
+### Open the certificate
+
+The success dialog links to **View certificate** (`/app/certificates/<txHash>`). The page is green only when the NFT contract's stored record matches the event and the credit is issuer-backed; a read error shows an amber "Could not verify" state and demo credits show a "Registration / demo credit" notice.
+
+</Step>
+</Steps>
+
+## Path B — Retire with the contracts directly
+
+If you prefer not to use the app, interact with the contracts directly. The examples use Foundry's `cast`; any wallet-capable tool works.
+
+<Steps>
+<Step>
+
+### Unwrap if needed
+
+A wrapped NFT is owned by the `CarbonCreditToken` contract and cannot be retired. Unwrapping burns the matching CCT, so you must hold at least the NFT's tonnes in CCT:
+
+```bash
+cast send <CCT_ADDRESS> "unwrapCredit(uint256)" <tokenId> \
+  --rpc-url <RPC> --private-key <key>
+```
+
+Reverts: `NFT not wrapped`, `Insufficient CCT balance`.
+
+</Step>
+<Step>
+
+### Retire
+
+`batchRetire` accepts 1–50 token IDs and one shared reason; each token must be owned by the sender and not yet retired.
+
+```bash
+cast send <NFT_ADDRESS> "batchRetire(uint256[],string)" "[12,13]" "Q1 2026 corporate offset" \
+  --rpc-url <RPC> --private-key <key>
+```
+
+For a single token use `retireCredit(uint256,string)`, which additionally requires a non-empty reason (`Reason required`). Other reverts: `Not owner` / `Not credit owner`, `Already retired`, `Invalid batch size`.
+
+</Step>
+<Step>
+
+### Read the certificate
+
+```bash
+cast call <NFT_ADDRESS> \
+  "getRetirementCertificate(uint256)((uint256,address,uint256,string,uint256))" 12 \
+  --rpc-url <RPC>
+```
+
+Returns `originalTokenId, retiredBy, retirementDate, retirementReason, co2Tonnes` (tonnes in 18-decimal units). The `CreditRetired(tokenId, retiredBy, timestamp, co2Tonnes, reason)` event carries the same data; `tokenId` and `retiredBy` are indexed.
+
+</Step>
+</Steps>
+
+Retired NFTs are burned, so they disappear from `balanceOf` and from the app's NFT lists. Global counters (`totalRetiredTonnes`, `userRetiredTonnes`) increase.
+
+## Optional: depository retire
+
+Only if you run a depository backend and set `NEXT_PUBLIC_BACKEND_URL`: open Carbon Wallet → **Depository**, click **Retire** on an *Active* row, optionally type a reason and confirm. The app sends `POST /depository/credits/:creditId/retire`. This only changes the backend ledger: no blockchain transaction occurs, the NFT is not burned and no onchain certificate exists. Do not treat it as proof of retirement.
+
+Reference: [CarbonCreditNFT](/docs/contracts/carbon-credit-nft) · [Carbon Wallet page](/docs/app/carbon-wallet)

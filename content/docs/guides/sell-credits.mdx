@@ -1,0 +1,71 @@
+---
+title: Sell credits
+description: Get NFT credits, wrap them into CCT, and list them at a fixed price.
+---
+
+The marketplace trades only **CCT** (ERC-20). Credits you hold as NFTs must be **wrapped** first. Proceeds arrive as payment token, minus the 0.25 % default trading fee. If the payment token ever refuses a transfer to you, the proceeds are held by the marketplace and a **Claim** banner appears.
+
+## Prerequisites
+
+- Wallet connected on the right network with gas ETH.
+- At least one non-retired NFT credit that carries a registry serial and an oracle proof hash. There is no free starter pack: credits come from an authorized issuer (who mints them to your wallet) or from buying CCT on the marketplace.
+- Credit methodology must match the CCT pool the marketplace uses (`VERRA_VCS` on the Robinhood deployment).
+
+## Steps
+
+<Steps>
+<Step>
+
+### Open Sell Credits
+
+Go to `/app/sell-credits`. The **Need Wrapping** card shows tonnes you hold as NFTs but not yet as CCT.
+
+</Step>
+<Step>
+
+### Wrap an NFT to CCT
+
+With a CCT balance of zero, the **Create Listing** tab lists up to five of your NFTs. Click **Wrap to CCT**. Your wallet signs two transactions in order:
+
+1. `CarbonCreditNFT.setApprovalForAll(CarbonCreditToken, true)`
+2. `CarbonCreditToken.wrapCredit(tokenId)`
+
+The NFT is locked in the CCT contract and you receive CCT equal to its tonnes (1 NFT of 1 tonne = 1 CCT). Wrap more NFTs to increase your balance.
+
+</Step>
+<Step>
+
+### Create a fixed-price listing
+
+Select **Fixed Price**, enter the amount (at most your CCT balance) and a price per tonne in USD. The app converts the price to payment token base units using the token's `decimals()` (`$15` = `15000000` for 6-decimal payment token). The price must be at least the marketplace minimum. The form shows **Expected Revenue**.
+
+</Step>
+<Step>
+
+### Approve CCT and submit
+
+Click **Create Listing**. If your CCT allowance for the marketplace is below the amount, the wallet first asks for `CCT.approve`. Then `createSellOrder(amount, pricePerTonne, 0, false)` locks your CCT in the marketplace. Orders created here never expire and never require KYC.
+
+</Step>
+<Step>
+
+### Track or cancel
+
+The app switches to **Active Listings**. **Cancel** calls `cancelOrder(orderId)` and returns the unfilled CCT. When buyers fill the order, payment token is sent to you automatically on each `fillOrder`.
+
+</Step>
+</Steps>
+
+For a timed sale instead, see [Run an auction](/docs/guides/run-an-auction).
+
+## If it fails
+
+| Symptom | Cause |
+| --- | --- |
+| No **Wrap to CCT** button | You have no non-retired NFT credits in the wallet (already wrapped, retired, or none minted). |
+| `Methodology mismatch` | NFT methodology differs from this CCT pool. |
+| `Already wrapped` / `Not NFT owner` | Token already locked, or not yours. |
+| "Insufficient CCT balance" in the form | Amount exceeds your CCT balance. |
+| Listing missing after creation | Event window: only the last 20,000 blocks are read; refresh, and check [Troubleshooting](/docs/troubleshooting). |
+
+Reference: [Sell Credits page](/docs/app/sell-credits) · [CarbonCreditToken](/docs/contracts/carbon-credit-token)

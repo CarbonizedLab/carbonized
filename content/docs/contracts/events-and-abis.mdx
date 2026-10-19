@@ -1,0 +1,173 @@
+---
+title: Events & ABIs
+description: Event reference for all Carbonized contracts, the ABI changes of the audit-fix redeployment and which ABIs the frontend uses.
+---
+
+Full event parameter tables are on each contract page. This page lists the signatures in one place, the breaking ABI changes, and what the frontend uses.
+
+## Event index
+
+| Contract | Events |
+| --- | --- |
+| [`CarbonCreditNFT`](/docs/contracts/carbon-credit-nft#events) | `CreditMinted`, `CreditRetired`, `CreditBatchMinted`, `VerificationUpdated`, `SerialNumberRegistered` |
+| [`CarbonCreditToken`](/docs/contracts/carbon-credit-token#events) | `CreditWrapped`, `CreditUnwrapped`, `BatchWrapped` |
+| [`CarbonMarketplace`](/docs/contracts/carbon-marketplace#events) | `OrderCreated`, `OrderFilled`, `OrderCancelled`, `AuctionCreated`, `BidPlaced`, `AuctionFinalized`, `AuctionCancelled`, `LiquidityAdded`, `LiquidityRemoved`, `Swap`, `KYCStatusUpdated`, `KYCGateUpdated`, `MinPriceUpdated`, `TradingFeeUpdated`, `FeesWithdrawn`, `PaymentDeferred`, `PaymentClaimed`, `FeeDiscountProviderUpdated`, `FeeDiscountApplied` |
+| [`CarbonRegistry`](/docs/contracts/carbon-registry#events) | `CompanyRegistered`, `CompanyProfileUpdated`, `EmissionsUpdated`, `EmissionTargetSet`, `TraderRegistered`, `CompanyVerified` |
+| [`CarbonPriceOracle`](/docs/contracts/carbon-price-oracle#events) | `PriceRequested`, `PriceUpdated`, `PriceReported`, `HighVolatilityDetected`, `PriceRequestFailed`, `PriceSourcesUpdated`, `MaxSourceSpreadChanged`, `MaxReportDeviationChanged`, `FunctionsConfigUpdated`, `SourceUpdated`, `DONHostedSecretsUpdated`, `UpdateIntervalChanged`, `VolatilityThresholdChanged`, `PriceBoundsChanged`, `MinConfidenceChanged`, `MaxStalenessChanged` |
+| [`EmissionVerifier`](/docs/contracts/emission-verifier#events) | `ProjectRegistered`, `VerificationRequested`, `VerificationFulfilled`, `VerificationFailed`, `CreditsMinted`, `ProjectDeactivated`, `CrossCheckToleranceChanged`, `FunctionsConfigUpdated`, `SourceUpdated`, `DONHostedSecretsUpdated` |
+| [`RegistrySync`](/docs/contracts/registry-sync#events) | `RegistryCheckRequested`, `RegistryCheckFulfilled`, `DuplicateCreditDetected`, `RegistryAdded`, `RegistryEndpointUpdated`, `RegistryStatusChanged`, `CreditVerified`, `CreditVerificationRevoked`, `FunctionsConfigUpdated`, `SourceUpdated`, `DONHostedSecretsUpdated` |
+| [`CarbToken`](/docs/contracts/carb-token#events) | `Transfer`, `Approval`, `DelegateChanged`, `DelegateVotesChanged` |
+| [`CarbStaking`](/docs/contracts/carb-staking#events) | `Staked`, `Unstaked`, `Withdrawn`, `TierThresholdsUpdated`, `TierDiscountsUpdated` |
+| [`IssuerBond`](/docs/contracts/issuer-bond#events) | `Bonded`, `UnbondStarted`, `Withdrawn`, `SlashProposed`, `SlashDisputed`, `SlashCancelled`, `Slashed`, `RoleRevokedUnderBonded`, `MinBondUpdated`, `BondRequiredUpdated`, `SlashTreasuryUpdated`, `IssuerBlockedUpdated` |
+| [`CarbGovernor`](/docs/contracts/carb-governor#events) | `TargetAllowanceUpdated`, plus the standard Governor events (`ProposalCreated`, `VoteCast`, `ProposalQueued`, `ProposalExecuted`, `ProposalCanceled`, settings and quorum updates) |
+| [`CarbTimelock`](/docs/contracts/carb-governor#carbtimelock) | standard `TimelockController` events (`CallScheduled`, `CallExecuted`, `Cancelled`, `MinDelayChange`) |
+
+All contracts also emit the standard OpenZeppelin `RoleGranted`, `RoleRevoked`, `RoleAdminChanged`, and (where pausable) `Paused` / `Unpaused`. The NFT emits ERC-721 `Transfer` / `Approval` / `ApprovalForAll`; the CCT emits ERC-20 `Transfer` / `Approval`.
+
+### Signatures
+
+```solidity
+// CarbonCreditNFT
+event CreditMinted(uint256 indexed tokenId, string indexed projectId, address indexed recipient, uint256 co2Tonnes, string methodology);
+event CreditRetired(uint256 indexed tokenId, address indexed retiredBy, uint256 timestamp, uint256 co2Tonnes, string reason);
+
+// CarbonCreditToken
+event CreditWrapped(address indexed user, uint256 indexed tokenId, uint256 co2Tonnes);
+event CreditUnwrapped(address indexed user, uint256 indexed tokenId, uint256 co2Tonnes);
+
+// CarbonRegistry
+event CompanyRegistered(address indexed company, string name, string legalId, uint256 scope1, uint256 scope2, uint256 scope3);
+event EmissionsUpdated(address indexed company, uint256 scope1, uint256 scope2, uint256 scope3, uint256 total, uint256 timestamp);
+event TraderRegistered(address indexed trader, string name, string country);
+event CompanyVerified(address indexed company, bool verified, address indexed verifier);
+
+// CarbonMarketplace
+event OrderCreated(uint256 indexed orderId, address indexed trader, bool isBuyOrder, uint256 amount, uint256 pricePerTonne);
+event OrderFilled(uint256 indexed orderId, address indexed taker, uint256 amountFilled, uint256 totalCost);
+event BidPlaced(uint256 indexed auctionId, address indexed bidder, uint256 bidAmount);
+event Swap(address indexed trader, bool carbonToStable, uint256 amountIn, uint256 amountOut, uint256 fee);
+event PaymentDeferred(address indexed to, uint256 amount);
+event PaymentClaimed(address indexed to, uint256 amount);
+
+// CarbonMarketplace (fee discount)
+event FeeDiscountProviderUpdated(address indexed oldProvider, address indexed newProvider);
+event FeeDiscountApplied(address indexed payer, uint256 discountBps, uint256 feeCharged);
+
+// CarbonPriceOracle
+event PriceReported(string indexed methodology, address indexed reporter, uint256 price, uint256 volume24h, uint256 observedAt);
+event PriceSourcesUpdated(string[] urls);
+
+// Oracle contracts (FunctionsConsumer)
+event SourceUpdated(bytes32 indexed sourceHash, uint256 length);
+event DONHostedSecretsUpdated(uint8 slotId, uint64 version);
+
+// CarbStaking
+event Staked(address indexed account, uint256 amount);
+event Unstaked(address indexed account, uint256 amount, uint256 unlockAt);
+event Withdrawn(address indexed account, uint256 amount);
+
+// IssuerBond
+event Bonded(address indexed issuer, uint256 amount, uint256 totalBond, bool roleGranted);
+event SlashProposed(uint256 indexed id, address indexed issuer, uint256 amount, string reason, uint256 executableAt, uint256 expiresAt);
+event Slashed(uint256 indexed id, address indexed issuer, uint256 amount, address indexed sink, bool burned);
+```
+
+<Callout>
+Indexed `string` parameters (such as `projectId` in `CreditMinted`) are stored as a keccak256 hash in the log topic; the original string cannot be recovered from the topic.
+</Callout>
+
+## ABI changes in the audit-fix redeployment
+
+The marketplace and the registry were redeployed with breaking ABI changes. Old deployments keep the old ABI and cannot be read by the current app.
+
+### `CarbonMarketplace`
+
+| Change | Detail |
+| --- | --- |
+| Price units | `pricePerTonne`, `minPricePerTonne`, `getPrice()`, `ammPool.lastPrice` are payment-token base units per tonne (6-decimal payment token: `$15` = `15000000`). Auction `startPrice` and `bidAmount` are totals in payment-token base units. Cost = `amount * pricePerTonne / 1e18`. |
+| `addLiquidity` | now `addLiquidity(carbonDesired, stableDesired, carbonMin, stableMin, minLiquidity)` returning `(carbonUsed, stableUsed, lpMinted)` |
+| `removeLiquidity` | now `removeLiquidity(lpAmount, carbonMin, stableMin)` |
+| New functions | `claim()`, `pendingWithdrawals(address)`, `withdrawFees(address)`, `accruedFees()`, `quoteAddLiquidity(...)`, `setKYCGate(bool)`, `kycGateEnabled()`, `paymentDecimals()`, `orderFeeBps(id)`, `auctionFeeBps(id)`, `FEE_MANAGER_ROLE()` |
+| New constants | `MINIMUM_LIQUIDITY`, `MIN_AUCTION_DURATION`, `MAX_AUCTION_DURATION`, `MAX_TRADING_FEE`, `CARBON_UNIT`, `MAX_PRICE_PER_TONNE`, `DEFAULT_MIN_PRICE_PER_TONNE`, `MAX_MIN_PRICE_PER_TONNE` |
+| New events | `KYCGateUpdated`, `TradingFeeUpdated`, `FeesWithdrawn`, `PaymentDeferred`, `PaymentClaimed` |
+| `createAuction` | `endTime` is an absolute timestamp between 1 hour and 30 days ahead |
+
+### `CarbonRegistry`
+
+| Change | Detail |
+| --- | --- |
+| Constructor | `constructor(address admin)` (was `(address nft, address admin)`) |
+| Removed | `registerAndClaimCredits()`, `starterCreditsClaimed`, `STARTER_CREDITS`, `creditNft`, event `StarterCreditsClaimed`, raw `email` / `phone` |
+| Changed writes | `registerCompany(name, legalId, scope1, scope2, scope3, contactHash)`, `updateCompanyProfile(name, legalId, contactHash)`, `registerTrader(name, contactHash, country)`, `setCompanyVerified(company, verified, expectedProfileHash)` |
+| Changed views | `getCompanyData` returns `contactHash` instead of email and phone; `getTraderData` likewise |
+| Added | `profileHashOf`, `verifiedOwnerOfLegalId`, `verifiedLegalIdOwner` |
+
+### `CarbonCreditNFT` and `CarbonCreditToken`
+
+| Change | Detail |
+| --- | --- |
+| NFT removed | `registerAndClaimCredits()`, `mintSimpleCredits()`, `hasRegistered` (no faucet) |
+| NFT changed | serial is mandatory; the double-counting key is the canonical serial only; `batchMint` validates like `mintCredit` |
+| CCT | not `ERC20Burnable` any more; only credits with a serial and non-zero proof hash can be wrapped; new `wrappedTonnes`, `wrapperOf`, `wrappedCountByTonnes` |
+
+### Oracle rewrite (Chainlink Functions)
+
+Breaking on purpose: `CarbonPriceOracle`, `EmissionVerifier` and `RegistrySync` must be redeployed. They share the new base `FunctionsConsumer`.
+
+| Change | Detail |
+| --- | --- |
+| Removed (all three) | `priceFetcherSource`, `emissionFetcherSource`, `registryCheckSource`, `updateSourceCode(string)`, event `SourceCodeUpdated` |
+| Added (all three) | `source()`, `sourceHash()`, `setSource(string)` (admin, 1 to 16,000 bytes), `MAX_SOURCE_LENGTH()`, `setDONHostedSecrets(uint8 slotId, uint64 version)` (`version = 0` = no secrets), `secretsSlotId()`, `secretsVersion()`; events `SourceUpdated(bytes32 indexed sourceHash, uint256 length)`, `DONHostedSecretsUpdated(uint8 slotId, uint64 version)` |
+| Unchanged (all three) | `setFunctionsConfig(donId, subscriptionId, gasLimit)` (gas 200,000 to 1,000,000), `donId()`, `subscriptionId()`, `gasLimit()`, `functionsRouter()`, `FunctionsConfigUpdated` |
+| New reverts (all three) | requests revert `Source not set`, `Functions not configured`, `Invalid args`; constructors revert `Invalid router` for a zero router |
+| `CarbonPriceOracle` response | now `abi.encode(uint256 price, uint256 volume24h, uint256 confidence, uint256 dataPoints)` (128 bytes). The old bit-packed `uint256` is rejected as `Malformed response`. Price is still 8 decimals; `getPrice`, `getPriceData`, `getLatestPrice` and the struct fields are unchanged. |
+| `CarbonPriceOracle` added | `setPriceSources(string[])`, `getPriceSources()`, `priceSourceUrls(uint256)`, `MAX_PRICE_SOURCES`, `maxSourceSpreadBps()`, `setMaxSourceSpread(uint256)`, `reportPrice(methodology, price, volume24h, observedAt)`, role `ORACLE_REPORTER_ROLE`, `maxReportDeviationBps()`, `setMaxReportDeviation(uint256)`, `lastPriceManual(string)`, `MAX_REPORT_AGE`, `MIN_REPORT_SPACING`; events `PriceSourcesUpdated`, `MaxSourceSpreadChanged`, `PriceReported`, `MaxReportDeviationChanged`. `updatePrice` / `updateAllPrices` revert `No price sources` until sources are set. |
+| `CarbonPriceOracle` failure reasons | `PriceRequestFailed`: `Price out of bounds`, `Invalid response`, `Confidence too low`, `Malformed response`, or the DON error text |
+| `EmissionVerifier` response | now `abi.encode(uint256 measuredEmissions, uint256 confidence)` (64 bytes, 18-decimal tonnes, confidence 1 to 100). The constant confidence 95 is gone; claiming still needs `MIN_CLAIM_CONFIDENCE` (90). |
+| `EmissionVerifier` projects | `registerProject`: `iotEndpoint` must be an `https://` URL template (`{projectId}`, `{from}`, `{to}`); `satelliteRegion` is `""` or an `https://` URL template (legacy field name, no longer coordinates); project id at most 64 bytes. A project without a cross-check URL is measured at confidence 70 and cannot mint. |
+| `EmissionVerifier` added | `crossCheckToleranceBps()`, `setCrossCheckTolerance(uint256)`, `MAX_PROJECT_ID_LENGTH`, event `CrossCheckToleranceChanged`. `VerificationFailed` reasons: `Oracle error`, `Malformed response`, `Zero measurement`, `Invalid confidence`. |
+| `RegistrySync` response | now `abi.encode(uint256 status)` (0 NOT_FOUND, 1 ACTIVE, 2 RETIRED). The old `exists * 256 + status` is rejected and recorded as `ERROR`. |
+| `RegistrySync` registries | `VERRA`, `GOLD_STANDARD`, `ICM` are created **inactive** with an empty endpoint (no hard-coded API URLs). Added `setRegistryEndpoint(name, apiEndpoint)` (`https://` URL containing `{serial}`) and event `RegistryEndpointUpdated`. `setRegistryStatus(name, true)` reverts `Endpoint not set` until an endpoint exists; `addRegistry(name, endpoint)` validates the endpoint and creates an active registry. |
+
+### Marketplace fee discount and issuer administration
+
+| Contract | Change |
+| --- | --- |
+| `CarbonMarketplace` | Added `PARAMETER_ROLE` (not granted by the constructor), `feeDiscountProvider()`, `setFeeDiscountProvider(address)`, `feeDiscountBpsOf(address)`, constants `MAX_FEE_DISCOUNT_BPS` (5000) and `DISCOUNT_GAS_LIMIT` (60,000); events `FeeDiscountProviderUpdated`, `FeeDiscountApplied`. `setTradingFee`, `setMinPricePerTonne`, `setKYCGate` and `setFeeDiscountProvider` now accept `PARAMETER_ROLE` **or** `DEFAULT_ADMIN_ROLE`. |
+| `CarbonCreditNFT` | Added `ISSUER_ADMIN_ROLE`, which is now the admin of `ISSUER_ROLE` (granted to the deployer in the constructor) |
+
+### CARB token stack (new contracts)
+
+`CarbToken`, `CarbStaking`, `IssuerBond`, `CarbGovernor` and `CarbTimelock` are new contracts with new ABIs, documented on their own pages. They are not launched yet.
+
+## ABIs used by the web app
+
+The web app is configured with the contract addresses through `NEXT_PUBLIC_*` variables (see [Environment variables](/docs/deployment/environment-variables)) and calls the contracts with human-readable ABIs covering the functions and events it needs:
+
+| Area | Functions and events |
+| --- | --- |
+| `CarbonCreditNFT` | `retireCredit`, ERC-721 enumeration, `getCreditDetails`, `retirementCertificates`, `CreditMinted` / `CreditRetired` logs |
+| `CarbonCreditToken` | `wrapCredit`, `unwrapCredit`, ERC-20 balance and allowance calls |
+| `CarbonMarketplace` | `createBuyOrder`, `createSellOrder`, `fillOrder`, `cancelOrder`, `createAuction`, `placeBid`, `finalizeAuction`, `cancelAuction`, `claim`, `pendingWithdrawals`, `getOrder`, `getAuction`, and the order and auction events. The AMM functions are not wired into the UI. |
+| `CarbonRegistry` | Company and trader registration with `contactHash`, profiles, emissions, `profileHashOf`, KYB status |
+| Payment token (ERC-20) | `decimals`, `balanceOf`, `allowance`, `approve` |
+| `CarbonPriceOracle` | `getLatestPrice(methodology)` (indicative values only) and `lastPriceManual(methodology)` (labels the dashboard price "Oracle" or "Manual report") |
+| `CarbonMarketplace` (discount) | `feeDiscountBpsOf(user)`, shown as an informational line when staking is configured |
+| CARB token stack | Optional: `CarbToken` (balance, `delegate`, `approve`), `CarbStaking` (tier table, `stake`, `unstake`, `withdraw`, position), `IssuerBond` (bond, unbond, withdraw, pending slash proposals), `CarbGovernor` and `CarbTimelock` (proposals from events, votes, queue, execute, propose). Configured by `NEXT_PUBLIC_CARB_TOKEN`, `NEXT_PUBLIC_CARB_STAKING`, `NEXT_PUBLIC_ISSUER_BOND`, `NEXT_PUBLIC_GOVERNOR`, `NEXT_PUBLIC_TIMELOCK`; when they are unset the app shows that CARB is not live yet. |
+
+Calls and event subscriptions must use the exact signatures of the deployed contracts. A function or event with a different parameter list reverts, returns no data, or never matches a log, because the event signature (topic 0) differs. See [Known limitations and security notes](/docs/contracts/roles-and-security#known-limitations-and-security-notes).
+
+If `NEXT_PUBLIC_CHAIN_ID` is unset the app falls back to a default chain; set it to `4663` for Robinhood Chain mainnet or `46630` for the testnet.
+
+## Changelog
+
+| Change | Affects | Action |
+| --- | --- | --- |
+| Oracle rewrite: shared `FunctionsConsumer` base, admin-uploaded sources, DON-hosted secrets, new response formats, price sources, manual `reportPrice` fallback, emission URL templates and confidence from the answer, registry endpoints (default registries inactive) | `CarbonPriceOracle`, `EmissionVerifier`, `RegistrySync` | Redeploy all three; point the app at the new addresses; see the [oracle rewrite](#oracle-rewrite-chainlink-functions) |
+| Fee-discount provider and `PARAMETER_ROLE` | `CarbonMarketplace` | New marketplace deployment; the ABI only gains members |
+| `ISSUER_ADMIN_ROLE` as admin of `ISSUER_ROLE` | `CarbonCreditNFT` | New NFT deployment; hand `ISSUER_ADMIN_ROLE` to the multisig and renounce it from the deployer |
+| CARB token stack | `CarbToken`, `CarbStaking`, `IssuerBond`, `CarbGovernor`, `CarbTimelock` | New contracts, not launched yet; the app treats their addresses as optional |
+
+## Getting the full ABI
+
+Compile the contracts with Hardhat (`npx hardhat compile`); full ABIs are in `artifacts/contracts/<path>/<Contract>.json`.

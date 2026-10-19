@@ -1,0 +1,60 @@
+---
+title: Retirement certificates
+description: Printable retirement certificates and a public, onchain verification link for every retirement. A certificate proves a token was burned, not that the underlying project is real.
+---
+
+Routes: `/app/certificates` (your retirements) and `/app/certificates/<txHash>` (public
+verification). Certificates are rebuilt from the chain, so they do not depend on any server.
+
+<Callout type="warn" title="What a certificate proves">
+  A certificate proves that a Carbonized credit token was **burned** by a wallet in a given transaction. It does not prove that the underlying project is real or that the issuer's data is correct. The retirement reason is labelled **Beneficiary statement (self-declared, unverified)**: the retiring wallet typed it, and it is public and permanent. Certificates on a test network carry a prominent testnet notice.
+</Callout>
+
+## Your retirements
+
+Connect your wallet to list every `CreditRetired` event where you are the retirer. Select one to
+see its certificate. The list is limited to the scanned block window: if
+`NEXT_PUBLIC_DEPLOY_BLOCK` is not set only the last 20,000 blocks are read and the page warns that
+older retirements may be missing (any of them can still be opened by transaction hash).
+
+## The certificate
+
+| Field | Source |
+| --- | --- |
+| Certificate number | `KRB-<tokenId, 6 digits>-<first 8 hex chars of the tx hash>`; anyone can derive it |
+| Beneficiary | `retiredBy` in the `CreditRetired` event (the wallet that retired) |
+| Tonnes CO₂e, date | `co2Tonnes`, `timestamp` in the event |
+| Beneficiary statement (self-declared, unverified) | `reason` in the event |
+| Project, methodology, vintage, geography, serial | `CarbonCreditNFT.credits(tokenId)`, which remains readable after the burn |
+| Transaction, block, verification link | Receipt of the retirement transaction |
+
+**Print / Save as PDF** opens the browser print dialog with only the certificate (A4 landscape);
+there is no PDF library. **Copy verification link** copies the public URL.
+
+## Public verification (fails closed)
+
+`/app/certificates/<txHash>?token=<tokenId>` works for anyone, wallet or not. It:
+
+1. Fetches the transaction **receipt** from the RPC and rejects missing or reverted transactions.
+2. Keeps only `CreditRetired` logs emitted by the configured `CarbonCreditNFT` address.
+3. Reads the contract's stored `retirementCertificates(tokenId)` record and cross-checks it against the log (token id, retirer and tonnes).
+4. Checks whether the credit is **issuer-backed**: its project id is not `REG` and its serial number is non-empty.
+
+The result is one of:
+
+| State | Meaning |
+| --- | --- |
+| **Green: Retirement recorded onchain** | The stored record was read **and** matches the event **and** the credit is issuer-backed. This proves the token was burned; it does not attest the underlying project or issuer. |
+| **Amber: Could not verify** | The stored record could not be read (for example an RPC error), so it was not cross-checked. Do not rely on the certificate until it verifies. |
+| **Red: Record mismatch** | The event was found, but the stored certificate does not match it. Do not rely on it. |
+| **Amber: Registration / demo credit** | The credit has no issuer serial number or real project behind it. The retirement is onchain, but it must not be presented as a real-world offset. |
+| **Testnet notice** | Shown whenever the app is not configured for `robinhood-mainnet`: testnet credits have no real-world value. |
+
+A transaction that retired several credits (`batchRetire`) shows one certificate per token with a
+selector. **Verify a retirement by transaction hash** on the main page opens this route for any
+hash.
+
+## Making a retirement
+
+Retire from [Carbon Wallet](/docs/app/carbon-wallet); the success dialog links straight to the new
+certificate.

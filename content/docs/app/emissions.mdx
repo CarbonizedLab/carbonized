@@ -1,0 +1,72 @@
+---
+title: Emissions tracker
+description: Log GHG Protocol activity data, convert it to tCO2e and sync Scope 1/2/3 totals onchain.
+---
+
+Route: `/app/emissions`. A client-side inventory for your company's greenhouse-gas emissions. Activity data is stored in your browser; only the aggregated totals can be published onchain.
+
+<Callout type="info" title="Where the data lives">
+  Records are saved in `localStorage` under `carb-emissions:v1:<wallet>:<year>`. They are not
+  uploaded anywhere. Clearing site data, or using another browser, starts an empty inventory. Use
+  **Export CSV** to keep a copy.
+</Callout>
+
+## How emissions are calculated
+
+`kgCO2e = quantity × emission factor`, summed per scope and shown in tonnes (`tCO2e`). The factor
+used is stored on each record, so later changes to the grid factor do not silently rewrite history.
+
+| Scope | Built-in categories | Unit |
+| --- | --- | --- |
+| **Scope 1** (direct) | Diesel generator, natural gas, fleet gasoline, fleet diesel, refrigerant leakage (R-410A, R-134a) | litres, m³, kg |
+| **Scope 2** (purchased energy) | Grid electricity | kWh |
+| **Scope 3** (value chain) | Business travel (short/long-haul flights, car/taxi, rail, bus), freight (road, sea, air), purchased goods (spend), waste to landfill | km, tonne-km, USD, kg |
+
+The full table with sources is available on the page (**Emission factor table**). Factors are
+rounded public averages (IPCC, DEFRA, AR4 GWP-100). The purchased-goods factor is a generic
+spend-based average. Replace them with supplier-specific or official national values before using
+the numbers in a verified report.
+
+<Callout type="warn" title="Grid factor is an editable assumption">
+  The tracker uses a default grid factor (editable) of **0.87 kgCO2e/kWh**. It is only a starting
+  assumption, not an official factor for any country. Replace it in the **Grid emission factor**
+  card with the national or regional factor for your grid and year (for example the published
+  regional grid factors in China). Existing electricity records keep their stored factor until you press **Recalculate with
+  current factor**.
+</Callout>
+
+## What the page shows
+
+| Element | Behaviour |
+| --- | --- |
+| Year selector | Inventory is kept per wallet and year (current year plus four previous). |
+| KPI cards | Scope 1, Scope 2, Scope 3 and total, in tCO2e, with each scope's share. |
+| Add activity data | Month, category, quantity (unit follows the category) and an optional note. Shows the factor and the resulting tCO2e before saving. |
+| Monthly chart | Stacked bar chart by scope for January to December. |
+| Activity records | Filter by month and scope, delete a record (with **Undo**), and **Export CSV**. |
+| Export CSV | Client-side download (`carb-emissions-<year>.csv`). Fields are quoted per RFC 4180 and cells that start with `=`, `+`, `-` or `@` are prefixed with `'` to prevent spreadsheet formula injection. |
+
+## Sync totals onchain
+
+The **Onchain totals** card compares the tracker totals for the selected year with the values
+stored in `CarbonRegistry` (`getCompanyEmissions`). **Sync totals onchain** calls
+`updateEmissions(scope1, scope2, scope3)` with the tonnes rounded to three decimals.
+
+- Only a registered company wallet can update its own totals. Register on
+  [Company](/docs/app/company) first.
+- The registry stores a single set of totals per company, so syncing a different year overwrites
+  the previous values.
+- If `NEXT_PUBLIC_CARBON_REGISTRY` is not set, the card explains that the registry is not
+  configured and sync is disabled.
+
+## States
+
+| State | Behaviour |
+| --- | --- |
+| Wallet not connected | An empty state asks you to connect. |
+| No records | KPI cards show `No data yet`; the chart and table show empty messages. |
+| Browser storage full or blocked | An error toast warns that changes may be lost on reload. |
+
+## Related
+
+- [Credit assessment](/docs/app/assess) uses this year's total to size your offset.

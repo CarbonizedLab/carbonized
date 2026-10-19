@@ -1,0 +1,95 @@
+---
+title: "Reading Carbon Prices: Oracles, Order Books and Pools"
+description: "How to compare quotes across an order book, an AMM pool and an oracle reference, what a price oracle can and cannot tell you, and how fees change the all-in cost of a trade."
+date: 2026-10-02
+tags: ['carbon-prices', 'oracle', 'market-data', 'trading']
+image: /images/blog/reading-carbon-prices-and-market-data.jpg
+imageCredit: "Photo: Unknown author / Wikimedia Commons / PxHere (CC0) — https://commons.wikimedia.org/wiki/File:Stock_market_charts_illustration.jpg"
+author: Carbonized
+---
+
+**TL;DR:** There is no single carbon price. Each credit type, vintage and venue has its own. Compare an oracle reference, order-book depth and pool quotes, add fees and slippage, and treat the oracle as a benchmark rather than a promise. In Carbonized's current testnet the oracle is mocked, so the numbers you see are demonstration data.
+
+If you want to buy or sell credits sensibly, you need to know what a fair price looks like. That is harder than it sounds, because "the carbon price" is a convenient fiction.
+
+## Why there is no single price
+
+Prices vary with:
+
+- **Type of credit:** removal credits usually cost far more than avoidance credits.
+- **Standard and methodology:** buyers trust some programmes more than others.
+- **Vintage:** the year of the reduction can matter a great deal, particularly for compliance eligibility.
+- **Project attributes:** geography, co-benefits and how well the project is documented.
+- **Venue:** a quote on one market is not necessarily comparable to a quote elsewhere.
+- **Compliance vs voluntary:** allowance prices in schemes like China's ETS reflect legal demand, while voluntary credit prices reflect corporate demand and reputation. See [our ETS and CCER overview](/blog/chinas-carbon-market-ets-vs-ccer).
+
+So when you see a number, ask: for what, from when, and where?
+
+## Three kinds of price signal
+
+### 1. An oracle reference
+
+A price oracle brings off-chain price information onto the chain so that contracts and users see the same figure. The design in Carbonized's `CarbonPriceOracle` uses Chainlink Functions to query several external sources, compute a weighted average, and store the result along with volume and a confidence score. A benchmark of this sort is useful for sanity checks: if a pool quote is wildly above the reference, find out why.
+
+Important caveats:
+
+- A reference is not an execution price. You may not be able to trade at it.
+- Quality depends on the sources and the weighting. The Carbonized implementation weights by source, not by traded volume, whatever the word VWAP might suggest.
+- Stale data is dangerous. The contract can reject prices older than a set limit.
+- Carbonized's oracle is not connected to the trading logic. No marketplace contract reads it today, so it is informational only. See [CarbonPriceOracle](/docs/contracts/carbon-price-oracle).
+
+**And on the testnet it is mocked.** The router stand-in never calls back, so no real price is stored. Any figures in dashboards are demonstration data. This is stated in our [FAQ](/docs/faq) and I will repeat it in the [launch post](/blog/carb-testnet-launch-robinhood-chain).
+
+### 2. Order-book depth
+
+An order book shows bids and asks, and the gap between the best of each is the spread. Depth tells you how much can trade near that price.
+
+- A **tight spread with little depth** can look cheap and still move sharply when you place a large order.
+- A **wide spread** signals thin interest or uncertainty.
+
+Read the whole stack, not just the top line. For mechanics, see [auctions vs order books](/blog/auctions-vs-order-books-for-carbon-credits).
+
+### 3. Pool prices
+
+An automated market maker prices from its reserves. In a constant-product pool, the spot price is the ratio of the two reserves, and larger trades relative to reserves move the price more. That movement is slippage. A pool always offers a quote, even in a quiet market, but you pay for that convenience when you trade size.
+
+## From quote to all-in cost
+
+The headline price is only part of what you pay. Build your estimate this way:
+
+1. Take the quote at your size, not the best price for one unit.
+2. Estimate slippage for pools or depth consumption for order books.
+3. Add the trading fee. Carbonized's default is 0.25 percent.
+4. Add network gas, which is small on a low-fee chain but not zero.
+5. Compare the total across venues.
+
+### An illustration
+
+Imagine a reference of 100 units per tonne, an order book offering 101 for small size, and a pool that quotes 102 after slippage on your trade. After a 0.25 percent fee, the order book may win for a small purchase, while a larger one might be split across venues. These numbers are made up to show the process, not live data.
+
+A fee example: on a trade costing 10,000 units, a 0.25 percent fee is 25 units. In the marketplace contract, order and auction fees come out of what the seller receives, while on AMM swaps the fee is deducted from the input. Who bears the fee affects how you set your limit price. The details are in the [CarbonMarketplace reference](/docs/contracts/carbon-marketplace).
+
+## Reading the signals together
+
+Use these as a checklist:
+
+- **Pool far above the reference.** Possible scarcity, thin liquidity or a stale oracle.
+- **Order book far below the reference.** Possibly weak demand for that methodology or a stale quote you can take.
+- **Wide spread and shallow depth.** Expect to pay for immediacy. Consider a patient limit order.
+- **Large size.** Consider splitting across venues or using an auction.
+- **Different vintages.** Never compare unlike with like.
+
+## Limits of any price feed
+
+- **Thin markets are volatile.** A few trades can swing the price.
+- **Quality is invisible in a number.** Two credits at the same price may differ enormously in integrity. Read [what a carbon credit actually is](/blog/what-a-carbon-credit-actually-is) before you compare.
+- **Oracles can be manipulated or wrong.** Any design that uses oracle prices for settlement needs safeguards such as staleness limits, sanity bounds and multiple sources.
+- **Reference prices can lag.** In fast-moving conditions, the oracle's update interval matters. Our contract shortens its interval after a large move, but it is still discrete.
+
+## What Carbonized's app shows today
+
+The marketplace page lists onchain orders and lets you buy or sell pooled tokens against a mock USDC. The dashboard includes some demonstration charts, and the docs say where. Treat all values as test data until a production oracle and real liquidity exist. See the [marketplace page documentation](/docs/app/marketplace) and the [dashboard documentation](/docs/app/dashboard).
+
+## Takeaway
+
+Good price reading is a habit, not a formula: identify exactly what you are comparing, look at depth and not only the top quote, include fees and slippage, and treat the oracle as one input among several. In a young market, humility about what a number means is worth more than precision about what it is.

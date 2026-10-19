@@ -1,0 +1,94 @@
+---
+title: "Double Counting: How It Happens and How Onchain Registries Help"
+description: "The four main ways one tonne of CO2e gets counted twice, which of them a token registry can stop, and which still need audits, accounting rules and honest issuers."
+date: 2026-08-10
+tags: ['double-counting', 'registry', 'carbon-credits', 'onchain']
+image: /images/blog/double-counting-and-onchain-registries.jpg
+imageCredit: "Photo: Andreas Praefcke / Wikimedia Commons (Public domain) — https://commons.wikimedia.org/wiki/File:Gesch%C3%A4ftsbuch_1833-49_Museum_Senftenberg.jpg"
+author: Carbonized
+---
+
+**TL;DR:** Double counting means one emission reduction is claimed more than once. A shared onchain registry is very good at preventing duplicate issuance and duplicate use of the same unit. It cannot, by itself, stop duplicate claims made across different registries or between countries. Carbonized addresses the first part today and is honest about the rest.
+
+Integrity is the whole game in carbon markets. If the same tonne can be sold twice, buyers pay for climate benefit that exists only on paper. Let us separate the different ways this goes wrong, because they need different cures.
+
+## The four kinds of double counting
+
+### 1. Double issuance
+
+A project registers the same reduction twice. It might be listed with two different registries, or re-submitted under a slightly different name or serial number. The result is two credits for one tonne.
+
+### 2. Double selling
+
+The same unit is sold to two buyers. In a spreadsheet or bilateral-contract world this happens through error or fraud, because there is no single source of truth about who currently holds the credit.
+
+### 3. Double use (a claim without retirement)
+
+A buyer says it offset a tonne but never retired the credit. The credit is then resold, and a second buyer also claims it. The record of ownership may be fine; the failure is that the *claim* was made without permanently consuming the unit.
+
+### 4. Double claiming across jurisdictions
+
+This one is more subtle. A project in country A generates credits that a company in country B uses toward a voluntary target, while country A also counts the same reduction toward its national climate commitment. Under the Paris Agreement's Article 6, countries use mechanisms such as corresponding adjustments, where the host country adjusts its own accounting so that the reduction is not counted twice. The details are political and technical, and a token on a chain cannot settle them alone.
+
+## What a registry is for
+
+A registry is simply an authoritative list with rules: each unit has a unique serial number, a single current owner, and a status (active or retired). Traditional registries do this in centralised databases, run by a standard body. That works, but verifying that a unit is genuine, who holds it, and whether it is retired usually requires trusting or querying a specific operator.
+
+An onchain registry moves that list onto a public ledger. Three properties matter.
+
+- **Uniqueness is enforced by code.** A contract can refuse to mint a second token for a serial it has already seen.
+- **Ownership is singular.** A non-fungible token has exactly one owner at a time, so selling it twice is impossible: the second transfer fails because the seller no longer owns it.
+- **History is public.** Anyone can inspect mints, transfers and retirements without asking permission.
+
+## How Carbonized applies this
+
+Carbonized models each credit as an ERC-721 token carrying its project, methodology, vintage, tonnes and serial number. Concretely:
+
+- When a credit is minted, a serial number is mandatory and the contract hashes its canonical form (trimmed and upper-cased; the free-text methodology label is not part of the key) and records it. Trying to mint the same serial again reverts. That prevents **double issuance inside Carbonized** (the original wording of this post said the methodology was hashed together with the serial; the contract was revised in October 2026 so a serial cannot be reused under a different methodology label).
+- Because each credit is a unique token, it can sit in only one wallet, which prevents **double selling** of the same unit.
+- Retiring a credit burns the token and stores a certificate onchain. A burned token cannot be listed again, which prevents **double use** inside Carbonized. The [retirement post](/blog/retirement-is-the-point) goes deeper on that.
+
+You can read the exact behaviour in the [CarbonCreditNFT reference](/docs/contracts/carbon-credit-nft), and the broader flow in the [architecture overview](/docs/architecture).
+
+## What the chain cannot do
+
+I want to be direct about the limits, because overstating them is exactly the kind of marketing that damages trust.
+
+### It cannot see other registries on its own
+
+A smart contract only knows what is inside the chain. If a project has already issued the same reduction on a traditional registry, a Carbonized mint with a different serial would not be blocked by the token logic. Preventing that needs a bridge between off-chain registries and the contract: a check that asks whether a serial already exists elsewhere, and a policy that acts on the answer.
+
+Carbonized includes a `RegistrySync` contract designed for that kind of lookup against registries such as Verra and Gold Standard. In the current build it is **advisory**: the credit contract does not require its result before minting, and on the testnet the oracle router is a mock, so no real lookups complete. See [RegistrySync](/docs/contracts/registry-sync). Making that check mandatory and backed by a real oracle network is future work, not a present guarantee.
+
+### It cannot verify the physical claim
+
+A token faithfully records whatever its issuer submits. If the baseline is inflated or the project never existed, a unique serial number does not help. Verification by independent auditors and recognised standards remains the foundation; the chain makes the paper trail durable and visible. In Carbonized's current testnet the trust anchor for minting is a permissioned issuer role, not a decentralised proof.
+
+### It cannot resolve national accounting
+
+Corresponding adjustments between governments are a matter of national registries and treaty rules. A marketplace can store metadata about authorisation status, but it cannot make a host country adjust its books.
+
+### Wrapping adds a design question
+
+Carbonized lets owners wrap individual credits into a fungible ERC-20 so they can trade in volume. Wrapping locks the NFT in a token contract and mints an equal number of tonnes, one-to-one, and unwrapping reverses it. The uniqueness guarantee holds because the underlying credit stays locked and retired credits cannot re-enter. The design trade-offs are in [NFT vs ERC-20 for carbon credits](/blog/nft-vs-erc20-carbon-credits).
+
+## A mental model: three layers of protection
+
+It helps to think in layers:
+
+1. **Source integrity:** standards bodies, auditors, and methodology rules decide whether a reduction is real.
+2. **Registry integrity:** unique serials, single ownership, and a final retired status stop the same unit being reused. This is where onchain registries shine.
+3. **Accounting integrity:** national and corporate rules decide who may count a reduction and where.
+
+An onchain registry strengthens layer two a great deal and makes layers one and three more auditable. It does not replace them.
+
+## Practical advice for buyers
+
+- Always capture the serial number and look it up with the issuing standard when possible.
+- Prefer platforms that retire credits onchain with a public certificate, not just a database flag.
+- Ask whether a credit has any host-country authorisation or adjustment status if you plan to make claims that depend on it.
+- Be sceptical of any pitch that says a blockchain makes fraud "impossible." It makes some kinds of fraud much harder and much easier to detect, which is valuable enough.
+
+## Takeaway
+
+Double counting is several problems wearing one name. Public ledgers eliminate the cheapest ones, duplicate issuance and duplicate use within a system, and give auditors a transparent trail for the rest. The remaining work, linking to off-chain registries and national accounts, is where honest engineering and clear communication matter most.

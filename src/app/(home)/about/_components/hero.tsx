@@ -1,0 +1,31 @@
+import Image from 'next/image';
+import Balancer from 'react-wrap-balancer';
+import { Section } from '@/components/section';
+
+const Hero = () => (
+  <Section className='relative w-full overflow-hidden px-4 py-16 sm:px-16 sm:py-24 md:py-32'>
+    <div className='mx-auto flex flex-col items-center justify-center gap-8'>
+      <div className='flex flex-col items-center gap-6 text-center'>
+        <Image
+          alt='Hero Background'
+          className='transition-transform hover:scale-110'
+          height={200}
+          priority
+          src={'/icon.png'}
+          width={200}
+        />
+        <h1 className='max-w-2xl bg-gradient-to-b bg-opacity-50 from-foreground to-muted-foreground/70 bg-clip-text font-regular text-4xl text-transparent tracking-tighter sm:text-6xl md:text-7xl'>
+          <Balancer>Building transparent carbon markets</Balancer>
+        </h1>
+        <p className='mx-auto max-w-2xl text-lg text-muted-foreground/90 md:text-xl'>
+          <Balancer>
+            Carbon markets can be opaque and fragmented. Carbonized is exploring
+            onchain records for issuance, trading and retirement.
+          </Balancer>
+        </p>
+      </div>
+    </div>
+  </Section>
+);
+
+export default Hero;

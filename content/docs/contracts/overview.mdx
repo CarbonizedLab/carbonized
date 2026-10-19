@@ -1,0 +1,108 @@
+---
+title: Contracts Overview
+description: The Carbonized smart contract suite, how the contracts relate, and the order they are deployed in.
+---
+
+The contracts are written in Solidity `^0.8.20` (compiled with 0.8.20, optimizer `runs: 1`, `viaIR`, EVM `paris`). They use OpenZeppelin 4.x (`security/Pausable`, `security/ReentrancyGuard`, `utils/Counters`; the token stack uses 4.9.3 APIs) and Chainlink Functions / Automation base contracts. The three oracle contracts share one base, `FunctionsConsumer` (`oracle/FunctionsConsumer.sol`): the JavaScript run by the DON is uploaded with `setSource`, not embedded in Solidity.
+
+<Callout type="warn" title="Unaudited">
+  The contracts have not been audited by an independent firm and were redeployed after an internal security review. Pages in this section describe the current sources. See [Roles & Security](/docs/contracts/roles-and-security).
+</Callout>
+
+## Contract map
+
+| Contract | Group | Kind | Purpose |
+| --- | --- | --- | --- |
+| [`CarbonCreditNFT`](/docs/contracts/carbon-credit-nft) | `core/` | ERC-721 (+URIStorage, Enumerable) | Registry of carbon credits created by `ISSUER_ROLE`. One NFT = one credit with metadata and a mandatory serial; retirement burns it. No faucet. |
+| [`CarbonCreditToken`](/docs/contracts/carbon-credit-token) | `core/` | ERC-20, 18 decimals | Wraps NFTs of **one methodology** into fungible CCT (1 CCT = 1 tonne). Not burnable by holders. |
+| [`CarbonMarketplace`](/docs/contracts/carbon-marketplace) | `core/` | Order book + auctions + AMM | Trades one CCT against one payment token (payment token, decimals read at deployment). |
+| [`CarbonRegistry`](/docs/contracts/carbon-registry) | `core/` | AccessControl + Pausable | Company / trader profiles (contact data only as a hash), reported emissions and KYB flag. Standalone: no role on the NFT, mints nothing. |
+| [`CarbonPriceOracle`](/docs/contracts/carbon-price-oracle) | `oracle/` | Chainlink Functions + Automation client | Price feed per methodology from operator-provided sources, with a multisig manual-report fallback. Not consumed onchain. |
+| [`EmissionVerifier`](/docs/contracts/emission-verifier) | `oracle/` | Chainlink Functions + Automation client | Records project emission measurements from operator-provided endpoints; `claimCredits` mints NFTs. |
+| [`RegistrySync`](/docs/contracts/registry-sync) | `oracle/` | Chainlink Functions client | Advisory check of serial numbers against operator-configured registry endpoints. |
+| [`CarbToken`](/docs/contracts/carb-token) | `token/` | ERC-20 + permit + votes + burn | CARB, fixed supply minted once, timestamp-clock voting. Not launched yet. |
+| [`CarbStaking`](/docs/contracts/carb-staking) | `token/` | AccessControl | Tier staking with warm-up and cooldown; tier = marketplace fee discount. No rewards. |
+| [`IssuerBond`](/docs/contracts/issuer-bond) | `token/` | AccessControl | CARB bond for the bonded-issuer path; unbonding delay, dispute window, slashing. |
+| [`CarbGovernor`](/docs/contracts/carb-governor) | `token/` | OpenZeppelin Governor | CARB voting over bounded parameters with a target allowlist. |
+| [`CarbTimelock`](/docs/contracts/carb-governor#carbtimelock) | `token/` | TimelockController | Bounded-delay (1 to 30 days) executor that holds the parameter and slasher roles. |
+| `MockERC20` | `tests/` | ERC-20 | Test payment token. **Mock, testnet and local chains only.** Open `mint`/`burn`. |
+| `MockFunctionsRouter` | `tests/` | Stub router | Stand-in for the Chainlink Functions router. **Mock, testnet and local chains only.** |
+| `MaliciousRetirer` | `tests/` | Test helper | Reentrancy test against `retireCredit`. Not deployed. |
+
+`ICM_COMPLIANCE` is the onchain identifier for national-registry compliance credits (for example credits issued under a national carbon-market registry such as China's CCER scheme). It is a code identifier and is not tied to a specific country in the contracts.
+
+`interfaces/` holds `ICarbonCreditNFT`, `ICarbonCreditToken`, `ICarbonMarketplace`, `IEmissionVerifier` (subsets of the public API; no behavior).
+
+`IFeeDiscount` (`discountBps(address user)`, in bps of the fee) is the interface the marketplace reads and `CarbStaking` implements.
+
+## Relationships
+
+| From | To | How |
+| --- | --- | --- |
+| `CarbonCreditToken` | `CarbonCreditNFT` | Immutable `nftContract`. Reads `getCreditDetails`, `ownerOf`; moves NFTs with `transferFrom`. |
+| `CarbonMarketplace` | `CarbonCreditToken` | Immutable `carbonToken` (must be 18 decimals). Escrows and pays out CCT. |
+| `CarbonMarketplace` | payment token (ERC-20) | Immutable `paymentToken`, via `SafeERC20`; `paymentDecimals` read once in the constructor. |
+| `CarbonMarketplace` | `CarbonCreditNFT` | Immutable `nftContract`; stored but **not used** by any marketplace function. |
+| `CarbonRegistry` | nothing | Standalone. It does not reference the NFT and needs no `ISSUER_ROLE`. |
+| `EmissionVerifier` | `CarbonCreditNFT` | Calls `mintCredit` in `claimCredits`; needs `ISSUER_ROLE` on the NFT. |
+| `RegistrySync` | `CarbonCreditNFT` | Reads `isSerialTokenized` in `isSerialUsed`. The NFT does **not** call `RegistrySync`. |
+| `CarbonPriceOracle` | nothing | No contract reads it onchain. |
+| `CarbonMarketplace` | `IFeeDiscount` provider | Optional, via `setFeeDiscountProvider` (`CarbStaking`). `staticcall` limited to 60,000 gas; any failure means no discount. |
+| `CarbStaking` | `CarbToken` | Immutable `carb`. Holds staked CARB. |
+| `IssuerBond` | `CarbToken`, `CarbonCreditNFT` | Immutable `carb` and `nft`. Holds bonds, burns slashed CARB, grants / revokes `ISSUER_ROLE` through `ISSUER_ADMIN_ROLE`. |
+| `CarbGovernor` | `CarbToken`, `CarbTimelock` | Votes from `CarbToken` (timestamp clock); executes through the timelock, only on allowlisted targets. |
+| `CarbTimelock` | marketplace, staking, bond | Holds `PARAMETER_ROLE` (and `SLASHER_ROLE` on the bond) once granted. No NFT role. |
+| `EmissionVerifier`, `RegistrySync`, `CarbonPriceOracle` | Chainlink Functions router | `FunctionsClient`; requests go to `functionsRouter`. |
+
+```text
+                        ┌────────────────────┐
+ EmissionVerifier ─────▶│  CarbonCreditNFT   │◀──── mintCredit / batchMint (ISSUER_ROLE only)
+   claimCredits         │  ERC-721 registry  │
+   (ISSUER_ROLE)        └─────────┬──────────┘
+                                  │ wrapCredit / unwrap
+                        ┌─────────▼──────────┐
+                        │ CarbonCreditToken  │  one instance per methodology
+                        │  CCT (ERC-20)      │  (ICM_COMPLIANCE / VERRA_VCS / GOLD_STANDARD)
+                        └─────────┬──────────┘
+                                  │ CCT + payment token (payment token)
+                        ┌─────────▼──────────┐
+                        │ CarbonMarketplace  │  order book, auctions, AMM
+                        └────────────────────┘
+
+ CarbonRegistry (standalone)      RegistrySync (advisory)      CarbonPriceOracle (standalone)
+```
+
+The CARB token stack sits beside this core and touches it in two places only: `CarbStaking` is read by `CarbonMarketplace` as a fee-discount provider, and `IssuerBond` holds `ISSUER_ADMIN_ROLE` on `CarbonCreditNFT`. The timelock holds `PARAMETER_ROLE` / `SLASHER_ROLE` on the marketplace, staking and bond contracts, and nothing on the NFT.
+
+## Deployment order
+
+The Robinhood Chain Testnet deployment (chain id `46630`) deploys the contracts in this order:
+
+1. `CarbonCreditNFT()`
+2. `CarbonCreditToken(name, symbol, nft, methodology)` three times: `CCT-ICM` (`ICM_COMPLIANCE`), `CCT-VCS` (`VERRA_VCS`), `CCT-GS` (`GOLD_STANDARD`)
+3. A payment token: `MockERC20("USD Coin", "payment token", decimals)` on testnet, the real payment token on mainnet (never a mock)
+4. `CarbonMarketplace(usdc, CCT-VCS, nft)`. Only the Verra token is wired in. The constructor reads the payment token's `decimals()`.
+5. `CarbonRegistry(admin)`, standalone, no role on the NFT
+6. `MockFunctionsRouter()` (testnet only), then `EmissionVerifier(router, nft)`, `RegistrySync(router, nft)`, `CarbonPriceOracle(router)`
+7. Role wiring (see [Roles & Security](/docs/contracts/roles-and-security)); on mainnet, hand every role to a multisig and renounce the deployer's
+8. Record the deployed addresses
+
+<Callout type="warn">
+The testnet script does not call `setFunctionsConfig` or `setSource` on any oracle contract, does not grant `AUTOMATION_ROLE`, and uses `MockFunctionsRouter`, so the oracle contracts cannot complete a real request on testnet. A live oracle needs a real Chainlink Functions router (check that Functions is available on the target chain first), a funded subscription, an uploaded source and operator-provided data sources: see [CarbonPriceOracle](/docs/contracts/carbon-price-oracle). The CARB token stack (`CarbToken`, `CarbStaking`, `IssuerBond`, `CarbGovernor`, `CarbTimelock`) is **not part of the testnet deployment** and is not launched. See [Known limitations and security notes](/docs/contracts/roles-and-security#known-limitations-and-security-notes) and [Robinhood Chain Mainnet](/docs/deployment/robinhood-mainnet).
+</Callout>
+
+### CARB token stack deployment order (not launched yet)
+
+The token stack is deployed separately from the core, and only after the owner decides to launch. Every step needs an admin; on mainnet the admin is the multisig. The stack's design and checklist are in `contracts/contracts/docs/TOKEN.md`.
+
+1. `CarbToken(recipient)`: the multisig or treasury receives the fixed supply.
+2. `CarbStaking(carb, admin, warmup, cooldown, thresholds, discountsBps)`.
+3. `IssuerBond(carb, nft, admin, minBond, unbondDelay, disputeWindow, bondRequired, slashTreasury)`, then the NFT admin calls `nft.grantRole(ISSUER_ADMIN_ROLE, bond)`.
+4. `marketplace.setFeeDiscountProvider(staking)` (admin or `PARAMETER_ROLE`).
+5. Stage 0 to 1: deploy `CarbTimelock` and `CarbGovernor` (`deployGovernance`), grant the timelock `PARAMETER_ROLE` / `SLASHER_ROLE` (`applyGovernanceSetup`), run `assertGovernanceBoundaries`. See [Roles & Security](/docs/contracts/roles-and-security#staged-decentralisation-of-the-carb-stack).
+6. Hand `ISSUER_ADMIN_ROLE` on the NFT to the multisig and verify the deployer holds no roles.
+7. Verify on the block explorer and publish the parameter table with the real values.
+
+The web app reads the stack through optional variables (`NEXT_PUBLIC_CARB_TOKEN`, `NEXT_PUBLIC_CARB_STAKING`, `NEXT_PUBLIC_ISSUER_BOND`, `NEXT_PUBLIC_GOVERNOR`, `NEXT_PUBLIC_TIMELOCK`). While they are unset the app shows that CARB is not live yet.
+
+The web app is configured through `NEXT_PUBLIC_*` variables with the addresses of the NFT, one CCT (Verra), marketplace, price oracle, emission verifier, payment token and the `CarbonRegistry`. `RegistrySync` is deployed but not referenced by the app; the ICM and Gold Standard tokens are read through optional env variables by the pages that aggregate pools.

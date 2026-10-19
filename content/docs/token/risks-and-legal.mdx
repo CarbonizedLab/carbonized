@@ -1,0 +1,37 @@
+---
+title: Risks and legal
+description: Legal notice and the main risks of CARB - governance capture, slashing, unaudited immutable contracts, key risk until stage 2 and regulatory uncertainty.
+---
+
+<Callout type="error" title="Legal notice">
+  This documentation is **not investment advice** and **not an offer or solicitation** of any kind. CARB may be restricted or unavailable in your jurisdiction. **No returns, yield, profit or price support are promised.** CARB is not presented as an investment and no regulatory approval is claimed. The contracts are unaudited. Get your own legal, tax and financial advice.
+</Callout>
+
+CARB is not launched yet. Everything below describes the design in the repository.
+
+## Legal and regulatory
+
+Issuing, distributing, listing or promoting a token can be regulated in some jurisdictions as an offer of securities, a crypto-asset, a commodity or a payment instrument (for example under MiCA in the EU, US securities, commodities and money-transmission law, and the rules of exchanges or launchpads). Whether CARB falls under any of them depends on facts outside the contracts: who sells it, how it is described and what buyers expect. The operator must obtain qualified legal advice in every jurisdiction where the token will be offered, sold or used before any launch. Launch also depends on permits that are not in place yet.
+
+## Risks
+
+| Risk | What it means |
+| --- | --- |
+| **Not investment advice, no returns** | CARB has no revenue share, rewards, buy-back or price support. Its value, if any, is uncertain and you can lose everything you pay for it. |
+| **Jurisdiction restrictions** | You may not be allowed to acquire or use CARB where you live. Checking is your responsibility. |
+| **Governance capture** | One token, one vote. If the treasury or a few holders control most delegated supply, they control governance. Bounds (fee at most 1 percent, discount at most 50 percent of the fee, no issuance, no escrow) limit damage but do not prevent a captured vote from slashing bonded issuers or changing the KYC gate or minimum price. |
+| **Quorum versus non-voting supply** | Quorum counts total supply, including treasury, staked and bonded tokens that cannot vote. Governance can stall. |
+| **Slashing** | A bonded issuer can lose its bond. The dispute flag only forces an explicit confirmation by the slasher; it is not adjudication. |
+| **Open bond path** | A bond is a deterrent, not verification of credit quality. See [Issuer bond](/docs/token/issuer-bond). |
+| **Staked and bonded CARB carry no votes** | Choosing a tier or a bond means giving up those votes. |
+| **No upgradeability** | The token and contracts are immutable. A bug means migrating to new contracts. |
+| **Unaudited** | The contracts had an internal review and a test suite, not an independent audit. |
+| **Single-developer key risk until stage 2** | Until governed parameters are live, a compromised multisig compromises the parameter set, the issuer allowlist and pause. |
+| **Sequencer and timestamps** | Governance uses `block.timestamp` set by the L2 sequencer. An outage delays proposal progress. |
+| **Discount follows current tier** | The discount is per address and per current tier, not retroactive. |
+| **External launchpad token** | If CARB is launched through a third-party launchpad, its owner, mint authority, tax, blacklist, LP lock and upgradeability are outside Carbonized's control, and Carbonized contracts cannot protect against a malicious or changeable token. See [Using an existing token](/docs/token/external-token). |
+| **Small wrapped supply** | With an external token, quorum is a share of the wrapped vCARB supply, so early on a small group can reach it. |
+
+## Related
+
+[CARB overview](/docs/token) · [What CARB does not do](/docs/token/what-carb-does-not-do) · [Roadmap and limitations](/docs/roadmap) · [Roles and security](/docs/contracts/roles-and-security)

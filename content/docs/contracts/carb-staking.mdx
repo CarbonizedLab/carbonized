@@ -1,0 +1,148 @@
+---
+title: CarbStaking
+description: Tier staking for CARB with a warm-up and a cooldown. The tier is read by the marketplace as a trading-fee discount. No rewards of any kind.
+---
+
+**Inherits:** `AccessControl`, `ReentrancyGuard`, `IFeeDiscount`. Source: `contracts/token/CarbStaking.sol`.
+
+<Callout type="warn" title="Legal notice">
+  Technical reference for unaudited contracts. Not investment advice, not an offer or solicitation, no returns promised. CARB may be restricted in your jurisdiction and is not launched yet. Get your own advice.
+</Callout>
+
+Stake [CARB](/docs/contracts/carb-token) to unlock an access **tier** 0 to 3. The marketplace reads the tier as a discount on its trading **fee**. Staking pays nothing: there is no reward token, emission, yield or lock-up bonus, and staked tokens are never lent or touched by any admin.
+
+## Constructor
+
+```solidity
+constructor(
+    address carb_,
+    address admin,
+    uint256 warmup,
+    uint256 cooldown,
+    uint256[3] memory thresholds,
+    uint16[4] memory discountsBps
+)
+```
+
+| Revert | Condition |
+| --- | --- |
+| `Invalid token` | `carb_` is the zero address |
+| `Invalid admin` | `admin` is the zero address |
+| `Warmup out of bounds` | `warmup` outside `MIN_WARMUP`..`MAX_WARMUP` |
+| `Cooldown out of bounds` | `cooldown` outside `MIN_COOLDOWN`..`MAX_COOLDOWN` |
+| `Threshold too low`, `Thresholds not increasing`, `Threshold too high` | invalid `thresholds` (see below) |
+| `Tier 0 has no discount`, `Discounts decreasing`, `Discount too high` | invalid `discountsBps` (see below) |
+
+`admin` receives `DEFAULT_ADMIN_ROLE` and `PARAMETER_ROLE`.
+
+## Immutable and constant parameters
+
+| Name | Value | Notes |
+| --- | --- | --- |
+| `carb` | constructor arg | immutable |
+| `WARMUP` | constructor arg | immutable. Bounds: `MIN_WARMUP` = 1 hour, `MAX_WARMUP` = 14 days |
+| `COOLDOWN` | constructor arg | immutable. Bounds: `MIN_COOLDOWN` = 1 day, `MAX_COOLDOWN` = 30 days |
+| `TIER_COUNT` | `4` | tiers 0 to 3 |
+| `MIN_THRESHOLD` | 1 CARB | smallest tier-1 threshold |
+| `MAX_THRESHOLD` | 50,000,000 CARB | largest tier-3 threshold |
+| `MAX_DISCOUNT_BPS` | `5000` | 50 % **of the fee**; the marketplace clamps to the same value independently |
+
+## Tier parameters
+
+| Name | Rules | Changeable by |
+| --- | --- | --- |
+| `tierThresholds[3]` (tier 1, 2, 3) | `1 CARB <= t1 < t2 < t3 <= 50,000,000 CARB` | `PARAMETER_ROLE` |
+| `tierDiscountBps[4]` (tier 0 to 3) | tier 0 is `0`, non-decreasing, last entry `<= 5000` | `PARAMETER_ROLE` |
+
+Changes take effect immediately for every account.
+
+<Callout title="Default in deployment helper, owner may change before launch">
+  The deployment helper (`scripts/lib/governance-setup.js` and the tests) uses thresholds of 1,000 / 5,000 / 25,000 CARB, discounts of 0 / 10 / 25 / 50 % of the fee, a warm-up of 3 days and a cooldown of 7 days. These are launch parameters chosen by the owner and may change before launch. Published values will be listed at launch (`contracts/contracts/docs/TOKEN.md`, parameters table).
+</Callout>
+
+## Position
+
+```solidity
+struct Position {
+    uint128 matured;      // staked and warmed up: counts for the tier
+    uint128 pending;      // staked, still warming up
+    uint64  pendingSince; // timestamp of the latest stake into `pending`
+    uint128 cooling;      // unstaked, waiting for the cooldown
+    uint64  unlockAt;     // when `cooling` becomes withdrawable
+}
+```
+
+`totalStaked` is the sum of pending and matured stake of all users and excludes tokens in cooldown.
+
+## How warm-up and cooldown work
+
+- `stake` puts CARB into `pending`. Only **matured** stake (pending that has aged at least `WARMUP`) counts for `tierOf`. Borrowing CARB, staking and reading the tier inside one transaction or block therefore gives no uplift: the tier stays that of the previously matured stake.
+- A top-up restarts the age of the **pending** bucket only. Already-matured stake keeps its tier.
+- `unstake` takes effect on the tier **immediately**: pending is consumed first, then matured. It starts the cooldown, and a further `unstake` restarts the cooldown for the whole cooling amount. Tokens in cooldown count for nothing.
+- `withdraw` releases all tokens whose cooldown has elapsed.
+- A tier therefore requires capital that stays committed for at least `WARMUP` going in and `COOLDOWN` going out.
+
+## Functions
+
+| Function | Access | Behavior |
+| --- | --- | --- |
+| `stake(amount)` | anyone, `nonReentrant` | Pulls `amount` CARB (needs a prior `approve` to this contract) into `pending`. The app uses approve-then-stake, no permit. Emits `Staked`. |
+| `unstake(amount)` | anyone, `nonReentrant` | Moves `amount` from pending/matured into `cooling` and sets `unlockAt = now + COOLDOWN`. Emits `Unstaked(account, amount, unlockAt)`. |
+| `withdraw()` returns `amount` | anyone, `nonReentrant` | Transfers the whole `cooling` balance after `unlockAt`. Emits `Withdrawn`. |
+| `effectiveStake(account)` | view | matured stake, plus pending stake that has finished warming up |
+| `tierOf(account)` | view | tier 0 to 3 from `effectiveStake` and the current thresholds |
+| `discountBps(user)` | view (`IFeeDiscount`) | `tierDiscountBps[tierOf(user)]`, in bps **of the fee** |
+| `positionOf(account)` | view | `(matured, pending, pendingSince, cooling, unlockAt)` as stored |
+| `balanceOf(account)` | view | matured + pending + cooling |
+| `setTierThresholds(uint256[3])` | `PARAMETER_ROLE` | Replaces the thresholds. Emits `TierThresholdsUpdated`. |
+| `setTierDiscounts(uint16[4])` | `PARAMETER_ROLE` | Replaces the discounts. Emits `TierDiscountsUpdated`. |
+
+Public getters: `carb`, `WARMUP`, `COOLDOWN`, `tierThresholds(i)`, `tierDiscountBps(i)`, `totalStaked`, and the constants above. `effectiveStake` and `tierOf` are evaluated at the current block time, so an account's tier can rise without any transaction once its pending stake has aged.
+
+## The fee discount
+
+`CarbStaking` is the contract the marketplace is pointed at with `CarbonMarketplace.setFeeDiscountProvider`. The discount applies to the trading **fee** only, never to the price, is capped at 50 % of the fee, and applies on the **CCT seller** side of order-book and auction sales. AMM swaps are not discounted. Details: [CarbonMarketplace](/docs/contracts/carbon-marketplace#fee-discount).
+
+## Events
+
+| Event | Parameters |
+| --- | --- |
+| `Staked` | `address indexed account, uint256 amount` |
+| `Unstaked` | `address indexed account, uint256 amount, uint256 unlockAt` |
+| `Withdrawn` | `address indexed account, uint256 amount` |
+| `TierThresholdsUpdated` | `uint256[3] thresholds` |
+| `TierDiscountsUpdated` | `uint16[4] discountsBps` |
+
+## Errors (revert strings)
+
+| Message | Function | Condition |
+| --- | --- | --- |
+| `Invalid amount` | `stake`, `unstake` | `amount == 0` |
+| `Amount too large` | `stake` | `amount` above `uint128` max |
+| `Insufficient stake` | `unstake` | `amount` above matured + pending |
+| `Nothing to withdraw` | `withdraw` | no cooling balance |
+| `Cooldown active` | `withdraw` | `block.timestamp < unlockAt` |
+| `Threshold too low` | thresholds | `t1 < MIN_THRESHOLD` |
+| `Thresholds not increasing` | thresholds | not `t1 < t2 < t3` |
+| `Threshold too high` | thresholds | `t3 > MAX_THRESHOLD` |
+| `Tier 0 has no discount` | discounts | first entry is not `0` |
+| `Discounts decreasing` | discounts | an entry is lower than the previous one |
+| `Discount too high` | discounts | last entry above `MAX_DISCOUNT_BPS` |
+
+Role failures revert with the OpenZeppelin `AccessControl: account ... is missing role ...` message.
+
+## Roles
+
+| Role | Holder | Gates |
+| --- | --- | --- |
+| `DEFAULT_ADMIN_ROLE` | `admin` (multisig) | role management |
+| `PARAMETER_ROLE` | `admin` at construction; the governance timelock from stage 1 of the [decentralisation plan](/docs/contracts/roles-and-security#staged-decentralisation-of-the-carb-stack) | `setTierThresholds`, `setTierDiscounts` |
+
+No role can move, freeze, seize or redirect staked tokens, and there is no rescue function.
+
+## Caveats
+
+- **Staked tokens carry no votes** (this contract delegates nowhere). A user choosing a tier gives up that voting power.
+- The discount follows the account's **current** tier, per address. Splitting stake across addresses does not add up, and a seller who unstakes loses the discount on fills that happen afterwards.
+- Nothing is paid to stakers. The only effect of a tier is the lower marketplace fee.
+- Not upgradeable.

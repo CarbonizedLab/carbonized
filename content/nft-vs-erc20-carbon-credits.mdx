@@ -1,0 +1,102 @@
+---
+title: "NFT vs ERC-20: Why Carbonized Uses Both for Carbon Credits"
+description: "Individual carbon credits are unique, but markets need fungible units. Here is how Carbonized pairs ERC-721 tokens with wrapped ERC-20 pool tokens, and the trade-offs of that design."
+date: 2026-09-07
+tags: ['erc-721', 'erc-20', 'tokenization', 'smart-contracts']
+image: /images/blog/nft-vs-erc20-carbon-credits.jpg
+imageCredit: "Photo: Stock Catalog / Wikimedia Commons (CC BY 2.0) — https://commons.wikimedia.org/wiki/File:Ethereum_(39663125045).jpg"
+author: Carbonized
+---
+
+**TL;DR:** Each verified credit has its own project, vintage and serial number, which is naturally a job for an ERC-721 (NFT). Trading is easier with interchangeable units, which is a job for ERC-20. Carbonized lets you hold the unique credit as an NFT and wrap it one-to-one into a pooled ERC-20 for trading, then unwrap it again. Retirement happens on the NFT.
+
+"Should carbon credits be NFTs?" is a question that usually triggers either hype or eye-rolling. The honest answer is: it depends on which property you care about at which step. Carbonized uses both token standards, each for what it does well.
+
+## Why credits are not naturally fungible
+
+Two credits may both be one tonne of CO2e, but they can differ in ways buyers care about:
+
+- **Methodology:** Verra VCS, Gold Standard, or another programme
+- **Project type:** removal, avoidance, nature-based, engineered
+- **Vintage:** the year of the reduction
+- **Geography and co-benefits**
+- **Serial number:** the identifier in the issuing registry
+
+A unique token per credit preserves all of that. It also gives you something valuable for integrity: a one-of-a-kind object cannot be accidentally merged with another. This is the same reason registries assign serials in the first place.
+
+## What ERC-721 gives you
+
+ERC-721 is the non-fungible standard. Every token has a unique ID and exactly one owner.
+
+- **Metadata travels with the token.** Carbonized stores the project, methodology, vintage, tonnes, serial and an oracle proof hash in the credit record.
+- **Uniqueness is enforceable.** The contract hashes the canonical serial number (trimmed and upper-cased; the methodology label is not part of the key) and refuses to mint the same serial twice, a direct defence against double issuance. See [double counting](/blog/double-counting-and-on-chain-registries).
+- **Retirement is clean.** Burning one specific token while storing a certificate tells a precise story: this credit, for this reason, by this wallet.
+
+The cost of ERC-721 for trading is friction. A buyer who wants 500 tonnes would need to buy many individual items, each with its own price. Liquidity fragments into thousands of one-off listings.
+
+## What ERC-20 gives you
+
+ERC-20 is the fungible standard: balances, not individual items. Any one unit equals any other.
+
+- **Divisibility.** Trade 0.37 tonnes if you wish.
+- **Simple pricing.** A single price per unit across a pool makes order books and automated market makers practical.
+- **Composability.** Wallets, exchanges and other contracts already understand ERC-20.
+
+The cost of pure ERC-20 is the loss of identity. If you pour all credits into one fungible token without discipline, a low-quality credit and a high-quality one become indistinguishable, and the market tends to price at the quality of the worst unit. That is the risk of any commodity pool.
+
+## How Carbonized combines them
+
+Carbonized's flow is deliberately layered:
+
+1. **Mint:** an authorised issuer mints a `CarbonCreditNFT` for a reduction it reports. The contract checks only that the serial is new and non-empty and that the oracle proof hash is non-zero; it does not independently verify the reduction.
+2. **Wrap:** the owner calls `wrapCredit(tokenId)`. The NFT is locked in the token contract, and Carbon Credit Token (CCT) is minted equal to the NFT's tonnes. Amounts use 18 decimals, so `1e18` units is one tonne.
+3. **Trade:** CCT trades against a payment token on the marketplace through an order book and auctions.
+4. **Unwrap or retire:** burning CCT via `unwrapCredit` returns an NFT; only the NFT can be retired onchain.
+
+See the contract references for [CarbonCreditNFT](/docs/contracts/carbon-credit-nft) and [CarbonCreditToken](/docs/contracts/carbon-credit-token), and the [architecture overview](/docs/architecture).
+
+### One pool per methodology
+
+To avoid the "worst unit sets the price" trap, there is one CCT contract per methodology pool, for example `VERRA_VCS` and `GOLD_STANDARD`. A pool accepts only NFTs of its own methodology; wrapping a mismatched credit reverts. This keeps each pool's quality definition coherent, although inside a pool vintage and project differences are still averaged out. That is a real trade-off, and a more granular pool design, say by vintage band, is something worth exploring.
+
+### Fully backed, one to one
+
+Each CCT is backed by tonnes actually locked in NFTs. The contract exposes totals, such as tonnes wrapped and supply, so anyone can check the 1:1 relationship. Carbonized's [audit page](/docs/app/audit) reconciles event-derived totals with contract counters and shows a match or mismatch.
+
+## Design trade-offs worth knowing
+
+### Unwrapping returns *an* NFT, not necessarily *your* NFT
+
+When you unwrap, you burn CCT and receive an NFT from the locked set. Depending on the function used, you may choose a specific token or take any available one. In either case, you may not get back the exact credit you deposited. That is the nature of pooled fungibility and a reason high-quality specific credits might prefer to stay as NFTs and be sold through an auction.
+
+### Rounding and dust
+
+Because CCT is divisible but NFTs are whole items, holders can end up with fractions of a tonne that cannot be unwrapped alone. It is a small annoyance, but real.
+
+### Gas costs
+
+Minting and wrapping individual NFTs costs more gas than moving ERC-20 balances. On an L2 or similar low-fee chain, this is manageable, which is a reason we target Robinhood Chain Testnet, though fees there say nothing about future mainnet conditions. See the [launch post](/blog/carb-testnet-launch-robinhood-chain).
+
+### Retirement path
+
+Only the NFT can be retired onchain, because the certificate belongs to a specific credit. If you hold CCT and want to claim an offset, you unwrap first. A pooled token that did not preserve provenance at retirement would be a weaker claim. The [retirement post](/blog/retirement-is-the-point) explains why.
+
+## Alternatives we considered
+
+- **ERC-1155 (multi-token).** It can hold both fungible and non-fungible types in one contract and supports batching. It is a credible choice, and a future migration is possible, but ERC-721 plus ERC-20 has the widest tooling support today and clear semantics.
+- **Pure ERC-20 per vintage or project.** It preserves fungibility within a narrow class but multiplies the number of contracts and fragments liquidity.
+- **Only NFTs plus a marketplace.** This works for high-value, low-volume credits, but not for volume trading.
+
+## When each token is the right choice
+
+| Goal | Better form |
+| --- | --- |
+| Hold a specific verified credit with full provenance | NFT |
+| Sell one rare or premium credit | NFT via auction |
+| Trade standardised volume quickly | CCT |
+| Make a retirement claim | NFT, retired onchain |
+| Provide liquidity | CCT |
+
+## Takeaway
+
+NFTs and ERC-20s are tools, not ideologies. Credits are unique at issuance and retirement, and fungible in between, so Carbonized models both ends with an NFT and the middle with a wrapped token. The price of that flexibility is extra complexity and some pooling trade-offs, which we try to be open about.

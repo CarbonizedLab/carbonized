@@ -1,0 +1,53 @@
+---
+title: Carbon Wallet
+description: Unified view of balances, NFT credits, orders, retirement and backend depository holdings.
+---
+
+Route: `/app/carbon-wallet`. Combines onchain balances, NFT credits and orders with an optional backend depository view. There is no password or backend-stored login: access depends only on the connected wallet, and every onchain action is signed in your wallet.
+
+<Callout type="warn" title="Backend optional and off by default">
+  The depository tab calls a service at `NEXT_PUBLIC_BACKEND_URL` only when that variable is set. There is no default URL, so when it is empty no request is made. That service is not part of this repository. If it is
+  unreachable, the depository tab is simply empty; everything else is onchain.
+</Callout>
+
+## What it shows
+
+| Element | Source |
+| --- | --- |
+| **Carbon Account** card: `CBZ-ACC-` + first 12 hex characters of your address (uppercase), copy-address button | Derived locally |
+| payment token Balance, CCT Balance | Onchain `balanceOf` |
+| NFT Credits (count and active tonnes) | Onchain NFT enumeration |
+| Active / Buy / Sell Orders | Onchain: your active orders from `OrderCreated` logs (20,000-block window) |
+| Depository Active / Retired | **Backend** `GET /depository/credits?owner=<address>` |
+
+Tabs: **Overview** (token holdings and credit summary), **NFT Credits** (cards with token ID, tonnes, vintage, methodology, geography, Active/Retired), **My Orders** (fill progress), **Depository** (table: credit ID, project, tonnes, methodology, vintage, status, issued date). **Refresh all** reloads everything.
+
+## Retiring a credit onchain
+
+Active NFT credits can be retired directly from the **NFT Credits** tab.
+
+1. Click **Retire** on a card, or tick several cards (or **Select all**) and click **Retire selected**.
+2. In the dialog, review the credits and total tonnes, enter a **reason** (required; it is written to the chain, shown on the certificate as a self-declared, unverified beneficiary statement, and is public and permanent) and tick *I understand this retirement is permanent*.
+3. **Retire permanently** calls `CarbonCreditNFT.retireCredit` (one credit) or `batchRetire` (up to 50) and waits for the transaction to be mined.
+4. On success the dialog shows **View certificate**, which opens `/app/certificates/<txHash>` (see [Certificates](/docs/app/certificates)).
+
+The app checks first that your wallet owns each token and that it still exists. Credits wrapped into CCT are held by the token contract and must be **unwrapped** before they can be retired. Retiring burns the NFT: it cannot be sold, transferred or retired again.
+
+The **Portfolio** page's *Retire* button deep-links here (`/app/carbon-wallet?retire=<tokenId>`) and opens the dialog with that credit selected.
+
+### Depository retire (optional, off-chain)
+
+The **Depository** tab keeps an off-chain **Retire** action on *Active* rows. It sends `POST /depository/credits/:creditId/retire` to the optional backend and only updates that backend ledger; it burns no NFT and issues no onchain certificate. When `NEXT_PUBLIC_BACKEND_URL` is not set the depository is skipped entirely (no request is made) and the tab shows *No depository credits*.
+
+## States
+
+| State | Behaviour |
+| --- | --- |
+| Wallet not connected | "Connect your wallet" empty state. |
+| Loading data | Cards show `...`; **Refresh all** is disabled. |
+| Backend offline | Depository tab shows "No depository credits" (error swallowed). |
+| Contracts not configured | Banner in the shell; onchain figures read as zero. |
+
+## Related
+
+[Company registration](/docs/app/company) (registers claimed credits in the depository) · [Retire credits](/docs/guides/retire-credits)

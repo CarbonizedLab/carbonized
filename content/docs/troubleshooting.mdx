@@ -1,0 +1,106 @@
+---
+title: Troubleshooting
+description: Fix wrong network, missing contract config, RPC errors, approvals, backend and revert messages.
+---
+
+## Wrong network
+
+**Symptom:** the wallet button reads **Switch to** followed by the target network name (red) instead of your address; transactions do not prompt or fail.
+
+**Cause:** the connected wallet chain differs from the app's target chain, which comes from `NEXT_PUBLIC_NETWORK` (`robinhood-mainnet`, `robinhood` / `robinhood-testnet`, `polygon`, `mumbai`/`amoy`, `hardhat`; anything else is Sepolia; unset means Hardhat in development and Sepolia in production).
+
+**Fix:** click the button to switch, or add the network manually. Robinhood Chain Mainnet is chain ID `4663`, RPC `https://rpc.mainnet.chain.robinhood.com`, explorer `https://robinhoodchain.blockscout.com`. Robinhood Chain Testnet is chain ID `46630`, RPC `https://rpc.testnet.chain.robinhood.com/rpc`, explorer `https://explorer.testnet.chain.robinhood.com`. Native token ETH on both. More in [Networks](/docs/wallet/networks).
+
+## "Contracts not configured" banner
+
+An amber bar at the top of every `/app` page: `Contracts not configured: NEXT_PUBLIC_…`.
+
+| Cause | Fix |
+| --- | --- |
+| Address variable is empty, `0x`, or the zero address | Set the listed variables in `.env.local` ([Environment variables](/docs/deployment/environment-variables)). Take the addresses from your deployment output, or from the public [testnet deployment table](/docs/deployment/robinhood-testnet#public-testnet-deployment). |
+| Changed `.env.local` but nothing happened | `NEXT_PUBLIC_*` values are inlined at build time: restart `pnpm dev` (or rebuild). |
+| Local Hardhat | Built-in fallback addresses apply only when `NEXT_PUBLIC_NETWORK=hardhat` or `NEXT_PUBLIC_CHAIN_ID=31337`, and only match a fresh deterministic deployment. |
+
+While the banner is up, reads return empty values (zero balances, empty lists) and the browser console logs an "address is not configured" message for the missing contract. Writes target an invalid address and fail without a transaction hash.
+
+<Callout type="warn" title="CCT must be the marketplace's token">
+  `NEXT_PUBLIC_CARBON_CREDIT_TOKEN` must be the `CarbonCreditToken` the marketplace was deployed
+  with (the `VERRA_VCS` pool in the Robinhood deployment). Another pool's address makes balances,
+  approvals and listings point at the wrong token.
+</Callout>
+
+## RPC timeouts or empty lists
+
+**Symptoms:** endless skeletons, "Failed to load orders / auctions / your sell data", balances `0`, `getLogs` errors in the console.
+
+**Causes and fixes:**
+
+- The public RPC is slow or rate-limited. Set `NEXT_PUBLIC_RPC_URL` to another provider and restart. The same endpoint is used for reads and event scans.
+- Event scans cover only the last **20,000 blocks**. Orders and auctions created earlier do not appear, even if active. On a chain with short block times this can be a short period. Re-create the listing, or read it directly with `getOrder(id)` / `getAuction(id)`.
+- Wallet RPC differs from the app RPC. A transaction can confirm in your wallet's RPC before the app's RPC sees it; press the page's **Refresh** or reload.
+
+## Insufficient funds
+
+| Error or sign | What you lack | Fix |
+| --- | --- | --- |
+| Wallet says insufficient funds for gas | Native ETH | On testnet use `https://faucet.testnet.chain.robinhood.com` (see [Networks](/docs/wallet/networks)). On mainnet there is no faucet: send real ETH to the wallet. |
+| "Insufficient payment token balance" (marketplace modal) or ERC-20 transfer revert | payment token | **Testnet only:** mint test payment token, since `MockERC20.mint(to, amount)` is open to anyone (amounts are in the mock's own decimals). See [Buy credits](/docs/guides/buy-credits#get-test-usdc). **Mainnet:** the payment token is real; there is no mock and no mint, so acquire payment token on an exchange or bridge it. |
+| "Insufficient CCT balance" | CCT | Wrap NFTs on [Sell Credits](/docs/app/sell-credits) or buy CCT. |
+
+## Approvals
+
+The app checks allowance and prompts `approve` itself, then waits for the receipt, before the main call.
+
+| Action | Token approved | Spender |
+| --- | --- | --- |
+| Buy from a sell order, create a buy request, place a bid | payment token | `CarbonMarketplace` |
+| Sell into a buy order, create a sell order, create an auction | CCT | `CarbonMarketplace` |
+| Wrap an NFT | NFT `setApprovalForAll` | `CarbonCreditToken` |
+
+If you see "payment token approval failed" or "CCT approval was cancelled or failed", you rejected the wallet prompt or it reverted; retry. The app approves the **exact** amount (payment token cost rounded up), re-reads the allowance before each transaction and re-approves when it is short. CCT amounts have 18 decimals (`1000` in the UI is `1000e18`); payment token amounts use the payment token's `decimals()` read from the chain (6 for real payment token). If the app shows "Could not read the payment token decimals", retry once the RPC responds.
+
+## Wallet will not connect
+
+Connection uses Reown AppKit (WalletConnect) and injected wallets such as MetaMask. See [Reown AppKit](/docs/wallet/reown-appkit). If the modal does not open, check that `NEXT_PUBLIC_REOWN_PROJECT_ID` is set and that the page origin is allowed in the Reown dashboard.
+
+## Backend not running
+
+Only some features use the backend (`NEXT_PUBLIC_BACKEND_URL`). It is **empty by default**, and the service is not in this repo; when the variable is empty no request is made.
+
+| Feature | Effect when it is down or unset |
+| --- | --- |
+| Depository tab and retire | Empty list, "Retirement failed". |
+| Company registration | The optional mirror call is skipped or fails silently; the onchain registration is not affected. |
+| Portfolio, Sell Credits | The depository fallback is skipped silently. |
+| Marketplace, Auctions, Credit Requests, Company and Trader dashboards | Unaffected (onchain only). |
+
+<Callout type="warn">
+  If you do set `NEXT_PUBLIC_BACKEND_URL`, company registration sends the registration details, including email and phone, to that server. Only point it at a backend you operate.
+</Callout>
+
+## Revert reasons
+
+Messages come from the contracts; the app surfaces `shortMessage` or `message`. A wallet rejection is shown as "Transaction cancelled in wallet".
+
+| Message | Where | Meaning |
+| --- | --- | --- |
+| `Order not active` / `Order expired` | `fillOrder` | Filled, cancelled or past expiry |
+| `Invalid fill amount` | `fillOrder` | Zero or above remaining |
+| `KYC required` | create or fill | Order flagged `requiresKYC`; caller not verified by a `KYC_ROLE` holder |
+| `Not order creator` | `cancelOrder` | Only the creator may cancel |
+| `Invalid amount` / `Invalid price` | create order | Zero value |
+| `Auction ended`, `Bid below start price`, `Bid too low`, `Auction not ended`, `Auction has bids` | auctions | See [Run an auction](/docs/guides/run-an-auction) |
+| `Not NFT owner`, `Already wrapped`, `Methodology mismatch`, `Cannot wrap retired credit`, `Unverified credit` | `wrapCredit` | See [Sell credits](/docs/guides/sell-credits); `Unverified credit` means the NFT has no serial or oracle proof hash |
+| `Price below minimum`, `Price above maximum` | create order / auction | Price outside the marketplace bounds; check the price is in payment-token base units per tonne (never scaled by `1e18`) |
+| `Duration too short`, `Duration too long` | `createAuction` | End time must be 1 hour to 30 days from now |
+| `Maker KYC revoked`, `Fill too small` | `fillOrder` | See [Marketplace](/docs/app/marketplace) |
+| `Nothing to claim` | `claim` | No pending withdrawal for your address |
+| `Already retired`, `Reason required`, `Invalid batch size` | NFT retire | See [Retire credits](/docs/guides/retire-credits) |
+| Generic revert with no message, paused | any write | `Pausable` contracts reject writes while paused |
+
+## Known limitations that look like bugs
+
+- Dashboard **Market Price** shows the `$18.50` fallback (labelled as an estimate) whenever the oracle has no fresh price. On testnet the Chainlink Functions router is a mock that never calls back, so the oracle never stores a Functions price there; a price only exists if an `ORACLE_REPORTER_ROLE` holder posted one with `reportPrice`, in which case the dashboard labels it "Manual report" instead of "Oracle". The oracle function is `getLatestPrice(string methodology)`; it reverts `Price not available` or `Price too stale` when there is no fresh data.
+- A **Claim** banner on the marketplace means a refund or proceeds could not be pushed to your wallet (for example a blocked payment token transfer) and are waiting in `pendingWithdrawals`. Click **Claim**.
+- Charts and totals marked as demo data on the [Trader](/docs/app/trader) dashboard do not change with your activity. The [Portfolio](/docs/app/portfolio) shows only onchain data, with the value as an indicative estimate.
+- The AMM functions exist in the marketplace contract but are not wired into the app.

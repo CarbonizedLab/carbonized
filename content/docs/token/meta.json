@@ -1,0 +1,13 @@
+{
+  "$schema": "..\\..\\..\\.source\\json-schema\\docs.meta.json",
+  "title": "CARB token",
+  "pages": [
+    "index",
+    "staking-and-tiers",
+    "issuer-bond",
+    "governance",
+    "external-token",
+    "what-carb-does-not-do",
+    "risks-and-legal"
+  ]
+}

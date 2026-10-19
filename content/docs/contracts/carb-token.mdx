@@ -1,0 +1,79 @@
+---
+title: CarbToken
+description: CARB, the fixed-supply ERC-20 with permit, burn and timestamp-clock voting used for staking tiers, issuer bonds and parameter governance.
+---
+
+**Inherits:** `ERC20`, `ERC20Burnable`, `ERC20Permit`, `ERC20Votes` (OpenZeppelin 4.9.3)
+**Token:** name `Carbonized`, symbol `CARB`, 18 decimals. Source: `contracts/token/CarbToken.sol`.
+
+<Callout type="warn" title="Legal notice">
+  This page is a technical reference for unaudited contracts. It is not investment advice, not an offer or solicitation to buy or sell anything, and makes no statement about value, price or returns. CARB may be restricted or regulated in your jurisdiction, and no return of any kind is promised. CARB is not launched yet. Get your own legal and financial advice before interacting with any token.
+</Callout>
+
+CARB is a utility and governance token of the Carbonized protocol. Its purposes are limited to what the contracts below implement: stake for an access tier that lowers the marketplace **trading fee** ([`CarbStaking`](/docs/contracts/carb-staking)), lock a bond to use the bonded-issuer path ([`IssuerBond`](/docs/contracts/issuer-bond)), and vote on bounded protocol parameters ([`CarbGovernor`](/docs/contracts/carb-governor)).
+
+It carries **no** profit share, revenue share, buy-back, dividend, staking reward, emission, rebasing, reflection or transfer tax. It is not a claim on carbon credits, on a treasury, on fees or on any asset.
+
+## Constructor
+
+```solidity
+constructor(address recipient)
+```
+
+Reverts `Invalid recipient` for the zero address. The whole supply is minted once to `recipient`; the intended recipient is a multisig or treasury, never a hot key.
+
+## Supply
+
+| Item | Value |
+| --- | --- |
+| `INITIAL_SUPPLY` | constant in the source, minted once in the constructor. It is a launch parameter chosen by the owner; changing it means redeploying the token. The exact parameters are published at launch. |
+| Supply changes | only downwards: holders can `burn` / `burnFrom`, and `IssuerBond` burns slashed bonds by default |
+
+There is **no** `mint`, owner, admin role, pause, blacklist, transfer fee or upgrade path on the token. A bug can only be fixed by deploying new contracts.
+
+## Functions
+
+| Function | Access | Behavior |
+| --- | --- | --- |
+| Standard ERC-20 (`transfer`, `approve`, `transferFrom`, `balanceOf`, `allowance`, `totalSupply`) | anyone | unchanged OpenZeppelin behavior |
+| `burn(amount)` | token holder | burns the caller's tokens |
+| `burnFrom(account, amount)` | spender with allowance | burns from `account`, spending allowance |
+| `permit(owner, spender, value, deadline, v, r, s)` | anyone with a valid signature | ERC-2612 approval by signature. The Carbonized web app uses a plain approve-then-stake flow and does not use `permit`. |
+| `delegate(delegatee)`, `delegateBySig(...)` | holder / signature | moves voting power. **Voting power counts only after delegation** (self-delegation is enough). |
+| `getVotes(account)`, `getPastVotes(account, timepoint)`, `getPastTotalSupply(timepoint)`, `delegates(account)`, `checkpoints`, `numCheckpoints` | view | ERC-5805 / `ERC20Votes` reads |
+| `clock()` | view | `uint48(block.timestamp)` |
+| `CLOCK_MODE()` | pure | `"mode=timestamp"` |
+
+## Voting clock and delegation
+
+- The voting clock is the **timestamp**, not the block number (ERC-6372 `mode=timestamp`). Robinhood Chain is an Arbitrum Orbit L2 where `block.number` is not a wall-clock proxy, so every duration in the governor and timelock is in **seconds**.
+- Tokens held by `CarbStaking` and `IssuerBond` carry **no votes**: those contracts delegate nowhere. Staking or bonding trades voting power for the tier or the issuer role. A holder who wants votes keeps tokens in the wallet and calls `delegate`.
+
+## Events
+
+Standard `Transfer`, `Approval` and the votes events:
+
+| Event | Parameters |
+| --- | --- |
+| `Transfer` | `address indexed from, address indexed to, uint256 value` |
+| `Approval` | `address indexed owner, address indexed spender, uint256 value` |
+| `DelegateChanged` | `address indexed delegator, address indexed fromDelegate, address indexed toDelegate` |
+| `DelegateVotesChanged` | `address indexed delegate, uint256 previousBalance, uint256 newBalance` |
+
+## Errors
+
+| Message | Condition |
+| --- | --- |
+| `Invalid recipient` | constructor `recipient` is the zero address |
+
+Other reverts come from OpenZeppelin (`ERC20: ...`, `ERC20Votes: ...`, `ERC20Permit: ...`).
+
+## Roles
+
+None. The token has no `AccessControl` and no privileged account.
+
+## Caveats
+
+- Staked and bonded CARB cannot vote. Quorum is a fraction of **total** supply, so treasury, staked and bonded tokens count toward the denominator without being able to vote (see [CarbGovernor](/docs/contracts/carb-governor#caveats)).
+- Distribution and allocation are owner decisions made outside the contracts; this documentation states none. The owner is responsible for legal review in every jurisdiction where the token is offered, sold or used.
+- The contracts are unaudited. See [Roles & Security](/docs/contracts/roles-and-security#known-limitations-carb-token-stack).

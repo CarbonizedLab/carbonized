@@ -1,0 +1,68 @@
+---
+title: Register a company
+description: Register your company onchain. Email and phone stay in your browser; only a hash goes onchain.
+---
+
+Company registration writes your company profile and reported emissions to the onchain **CarbonRegistry**. It does **not** mint or give you any credits: there is no starter pack. You obtain credits by [buying them](/docs/guides/buy-credits) or from an authorized issuer.
+
+<Callout type="warn" title="What becomes public">
+  Company name, legal entity ID and emission figures are public and permanent on the blockchain. Email and phone are **not** published: the app computes `contactHash = keccak256(abi.encode(email, phone, salt))` with a random salt and stores only the hash onchain. The email, phone and salt are kept in this browser's local storage.
+</Callout>
+
+## Prerequisites
+
+- Wallet connected on the target network with a little gas ETH.
+- `NEXT_PUBLIC_CARBON_REGISTRY` configured.
+- A wallet with no existing registry profile: each wallet is **either one company or one trader**, once.
+- No backend is required. Leave `NEXT_PUBLIC_BACKEND_URL` empty unless you run your own: when it is set, the registration details, including email and phone, are sent to that server.
+
+## Steps
+
+<Steps>
+<Step>
+
+### Open the form
+
+Go to `/app/company/register` and connect your wallet.
+
+</Step>
+<Step>
+
+### Fill in the details
+
+Required: company name, legal entity ID, email (contains `@`), phone. Optional: Scope 1, 2 and 3 annual emissions in tonnes CO₂e. The form shows the total. The name, legal ID and emissions are stored onchain and drive the company dashboard's coverage figures.
+
+</Step>
+<Step>
+
+### Submit
+
+Click **Register Company**. The app generates the salt, computes the contact hash and calls `CarbonRegistry.registerCompany(name, legalId, scope1, scope2, scope3, contactHash)`; one wallet signature, and the app waits for the receipt. Email, phone and salt are then saved in your browser.
+
+</Step>
+<Step>
+
+### Verify
+
+You are on the company dashboard, which shows your profile, emissions, your contact commitment (hash) and a **KYB Pending** badge until a verifier reviews your profile.
+
+</Step>
+</Steps>
+
+## Details worth knowing
+
+- **KYB review.** A `VERIFIER_ROLE` account approves the profile hash it reviewed (`profileHashOf`). It is a review of what you submitted, not a guarantee about your company.
+- **Editing resets KYB.** Re-opening the page after registering shows **Save Changes Onchain**. Changing your name, legal entity ID, contact details or any Scope 1/2/3 figure calls `updateCompanyProfile` / `updateEmissions` and resets the KYB flag; a verifier must review again. Leave email and phone empty to keep the current contact hash.
+- **One verified wallet per legal ID.** A legal ID can be verified for one wallet at a time.
+- **Local contact data.** If you clear this browser's storage you lose your email, phone and salt; the onchain hash stays.
+
+## If it fails
+
+| Symptom | Cause |
+| --- | --- |
+| "Registry not configured" | `NEXT_PUBLIC_CARBON_REGISTRY` is missing. Set it and restart the dev server. |
+| `Already registered` | This wallet already has a company or trader profile. Use another wallet. |
+| `Pausable: paused` | The registry is paused by its operators. |
+| Revert on name, legal ID or emissions | A field is empty or over the limit (name 100, legal ID 64 characters; each emission at most 1 trillion tonnes). |
+
+Reference: [Company page](/docs/app/company) · [CarbonRegistry](/docs/contracts/carbon-registry)

@@ -1,0 +1,108 @@
+---
+title: FAQ
+description: Short answers about Carbonized's tokens, fees, testnet and mainnet, wallets and current limits.
+---
+
+## General
+
+### What is Carbonized?
+A carbon-credit marketplace on EVM chains. Credits are created by authorized issuers as ERC-721 NFTs (`CarbonCreditNFT`), wrapped into fungible ERC-20 **CCT** (`CarbonCreditToken`), and traded for payment token on `CarbonMarketplace` through an order book and auctions. See [Architecture](/docs/architecture).
+
+### Is it live on mainnet?
+Not by default. The public deployment is on **Robinhood Chain Testnet** (chain ID `46630`), where nothing has monetary value. Robinhood Chain mainnet (chain ID `4663`, real 6-decimal payment token) is being prepared: see [Robinhood Chain Mainnet](/docs/deployment/robinhood-mainnet). The contracts are **unaudited**, and the app shows a "Testnet / unaudited" banner on every build that is not configured for `robinhood-mainnet`.
+
+### What is real and what is mocked?
+| Mocked or demo (testnet only) | Real contract logic |
+| --- | --- |
+| `MockERC20` payment token with an open `mint` | NFT issuance by `ISSUER_ROLE`, wrapping and retirement |
+| `MockFunctionsRouter` stands in for the Chainlink Functions router, so price, verification and registry checks never complete | Order book, auctions, AMM and fee logic |
+| Charts marked **Demo** on the trader dashboard | Balances, orders, auctions, NFT lists and portfolio events read from chain |
+
+Mainnet has no mock contracts. Details per page: [Web App](/docs/app/dashboard).
+
+### Which languages does the app support?
+English and Chinese (中文). Use the language toggle in the app's top bar; the choice is remembered in your browser.
+
+### Which market is Carbonized aimed at?
+Carbonized is aimed at the Chinese market. Its `ICM_COMPLIANCE` pool is meant for national-registry compliance credits (for example CCER credits), alongside voluntary standards such as Verra VCS and Gold Standard. The testnet carries no real credits.
+
+## Wallet and network
+
+### How do I connect?
+With the **Connect Wallet** button, which uses Reown AppKit (WalletConnect, needs `NEXT_PUBLIC_REOWN_PROJECT_ID`). Injected wallets such as MetaMask also work. See [Reown AppKit](/docs/wallet/reown-appkit).
+
+### Where do I get gas and payment token?
+Gas on testnet: the Robinhood testnet faucet in [Networks](/docs/wallet/networks). Test payment token exists **only on testnet**: call the open `mint` on the mock payment token; steps in [Buy credits](/docs/guides/buy-credits#get-test-usdc). On mainnet you need real ETH for gas and real payment token from an exchange or bridge; there is no faucet.
+
+### Is there a free starter pack of credits?
+No. The app and the contracts have no starter pack, faucet or free-credit path. Credits exist only when an authorized issuer has issued them, and you obtain them by buying on the marketplace or from an issuer.
+
+### How do I become an issuer?
+An admin has to grant `ISSUER_ROLE` to your address, ideally a multisig. Follow the [issuer onboarding policy](/docs/guides/issuer); the current issuers are listed publicly on the [Issuer page](/docs/app/issuer). Holding the role does not imply any registry or regulatory approval.
+
+## Tokens
+
+### What is the difference between the NFT and CCT?
+Each NFT is one unique credit with metadata (project, methodology, vintage, tonnes, oracle proof hash, serial). CCT is fungible: wrapping an NFT locks it in the CCT contract and mints CCT equal to its tonnes (1 tonne = `1e18` units). Only CCT trades on the marketplace; only NFTs can be retired onchain.
+
+### Is a credit "verified"?
+The contracts only guarantee that a credit was created by an account holding `ISSUER_ROLE`, with a non-empty registry serial and a non-zero oracle proof hash, and that the same serial cannot be tokenized twice. The NFT does not call the oracle contracts, and the oracle contracts are mocked on testnet. Think of a credit as "issued by an authorized issuer"; whether the underlying project is real depends on that issuer.
+
+### Why can't I wrap my credit?
+The NFT must be yours, unwrapped, not retired, have non-zero tonnes, carry a serial and an oracle proof hash, and its methodology must equal the CCT pool's (`Methodology mismatch` otherwise). The marketplace is deployed against the `VERRA_VCS` pool. The [Tokenize](/docs/app/tokenize#why-a-credit-cannot-be-wrapped) page shows the exact reason for each credit that cannot be wrapped before you send a transaction.
+
+### How many decimals does payment token have?
+Real payment token on mainnet has 6 decimals. The app reads `decimals()` of `NEXT_PUBLIC_payment token_ADDRESS` once and never assumes 18, and the marketplace reads it in its constructor (2 to 18 accepted). CCT always has 18 decimals (`1e18` = 1 tonne). On the marketplace a price is payment-token base units per tonne, so `$15` per tonne is `15000000` with 6-decimal payment token. The mock payment token on testnet follows whatever decimals it was deployed with.
+
+## Trading
+
+### What fees apply?
+`tradingFeePercent` is 25 basis points (0.25 %) by default, adjustable by the admin up to 1 %. In order fills and auction settlements it is deducted from the payment token the seller receives, using the rate at the time the order or auction was created. In AMM swaps it is deducted from the input amount.
+
+### What if a payment cannot be delivered?
+If the payment token refuses a refund or proceeds transfer (for example because an address is blacklisted), the marketplace credits it to `pendingWithdrawals` instead of failing the whole trade. The app shows a **Claim** banner when `pendingWithdrawals(you) > 0`; clicking it calls `claim()`.
+
+### Do I need KYC?
+Only for orders created with `requiresKYC = true` (the maker must still be verified when someone fills it), or if the admin switches on the optional global KYC gate for auctions and the AMM. Verification is set by a `KYC_ROLE` holder via `setKYCStatus`. The web app never sets the order flag, so web-created orders have no KYC requirement.
+
+### Can orders expire?
+The contract supports expiry (`expiresIn`), but the web app always passes `0`, meaning no expiry. Auction end times must be 1 hour to 30 days ahead.
+
+### Is there a swap UI?
+The marketplace contract has an AMM (`addLiquidity`, `removeLiquidity`, `swap`, `quoteAddLiquidity`), but the AMM functions are not wired into the web app.
+
+### Why don't I see an old order or auction?
+The app scans events from `NEXT_PUBLIC_DEPLOY_BLOCK` when set, otherwise only the last 20,000 blocks. See [Troubleshooting](/docs/troubleshooting).
+
+## Retirement and compliance
+
+### How do I retire a credit?
+Onchain: `retireCredit` / `batchRetire` burn the NFT and store a certificate (Carbon Wallet, NFT Credits tab). The optional depository tab (only with a backend configured) has a separate off-chain retire that burns nothing. See [Retire credits](/docs/guides/retire-credits).
+
+### What does a retirement certificate prove?
+The app builds a printable certificate from the chain at `/app/certificates/<txHash>`. It shows green only when the NFT contract's stored record was read and matches the event and the credit is issuer-backed (non-`REG` project, non-empty serial). A read error shows an amber "Could not verify" state, and unbacked registration/demo credits show an amber notice. In every case it proves that a token was burned, not that the underlying project is real. The retirement reason is a self-declared, unverified statement. See [Certificates](/docs/app/certificates).
+
+### Does registering a company verify it?
+No. Registration records your company profile and reported emissions onchain in `CarbonRegistry` and does not mint any credits. The KYB badge is set later by an account holding `VERIFIER_ROLE`, for exactly the profile that was reviewed; any later change to name, legal ID, contact details or emissions resets it. See [Company](/docs/app/company).
+
+### What personal data goes onchain?
+Company or trader name, legal ID (companies), country (traders), emission figures and retirement reasons are public and permanent. Email and phone are **not** onchain: only a salted `contactHash` is stored, and the details and salt stay in your browser's local storage.
+
+## Infrastructure
+
+### Do I need the backend?
+No. Marketplace, auctions, credit requests, company and trader registration, portfolio and certificates all run onchain. `NEXT_PUBLIC_BACKEND_URL` is optional, off by default and should stay empty unless you run your own depository backend (when set, company registration sends the registration details, including email and phone, to it). See [Troubleshooting](/docs/troubleshooting#backend-not-running).
+
+### Why does the dashboard price show an estimate?
+The dashboard calls `CarbonPriceOracle.getLatestPrice("VERRA_VCS")`. The oracle runs Chainlink Functions JavaScript set onchain by the admin (`setSource`) over price sources, and a fallback reporter holding `ORACLE_REPORTER_ROLE` can submit a price with `reportPrice`; the dashboard labels the value **Oracle** or **Manual report** from `lastPriceManual`. On testnet the router is a mock, so there is no fresh Functions price and the dashboard may show its `$18.50` fallback labelled as an estimate. Portfolio values are indicative only.
+
+## CARB token
+
+### Is there a Carbonized token?
+A utility token called CARB is planned but is **not launched yet**. It would only add optional utilities and carries no financial promises. See [Token](/docs/token).
+
+### Do I need CARB to use Carbonized?
+No. Trading, retirement and certificates work without it. CARB would only add optional fee tiers (a discount on the trading fee, never on the price), an issuer bond for the bond-based issuer path, and governance.
+
+### Is CARB an investment?
+No. There are no returns, yield, staking rewards, revenue share or price commitments. Nothing here is investment advice or an offer or solicitation; rules vary by jurisdiction and CARB may be restricted where you live. The contracts are unaudited; get your own advice.

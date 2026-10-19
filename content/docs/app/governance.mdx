@@ -1,0 +1,57 @@
+---
+title: Governance
+description: The /app/governance page - proposals, delegation, voting, queue and execute, and the guided parameter-change form.
+---
+
+Route: `/app/governance` (sidebar: **Governance**). It lets CARB holders follow and vote on proposals to the bounded protocol parameters. CARB is **not launched yet**; see [Governance](/docs/token/governance) for what can and cannot be governed.
+
+<Callout type="error" title="Legal notice">
+  Not investment advice. Not an offer or solicitation. CARB may be restricted in your jurisdiction. No returns are promised. The contracts are unaudited. Get your own advice.
+</Callout>
+
+## Configuration
+
+Needs `NEXT_PUBLIC_CARB_TOKEN`, `NEXT_PUBLIC_GOVERNOR` and `NEXT_PUBLIC_TIMELOCK` (optional variables, not required by the missing-configuration banner). Without them the page shows **"CARB is not live yet"**. The guided form also uses the marketplace, staking and bond addresses (`NEXT_PUBLIC_CARBON_MARKETPLACE`, `NEXT_PUBLIC_CARB_STAKING`, `NEXT_PUBLIC_ISSUER_BOND`) as allowlisted targets.
+
+## Proposals
+
+Proposals are rebuilt from Governor events. Each card shows its state (pending, active, defeated, succeeded, queued, executed, canceled, expired), the for, against and abstain votes, and the quorum.
+
+## Delegation
+
+Voting power exists only after delegation. **Delegate** calls `CarbToken.delegate(...)` for yourself or another address. Staked and bonded CARB carry no votes. Votes count from the snapshot, so delegate before a proposal is created.
+
+## Voting and execution
+
+| Button | Contract call |
+| --- | --- |
+| **For**, **Against**, **Abstain** | `CarbGovernor.castVote(proposalId, support)` while the proposal is active |
+| **Queue** | `CarbGovernor.queue(...)` once it has succeeded |
+| **Execute** | `CarbGovernor.execute(...)` after the timelock delay |
+
+Quorum is a fraction of total supply, including tokens that cannot vote.
+
+## Propose parameter change
+
+A guided form (a wallet holding at least the proposal threshold is needed) for **allowlisted targets only**:
+
+- marketplace minimum price
+- trading fee (basis points)
+- KYC gate
+- fee discount provider
+- staking tier thresholds
+- issuer bond minimum
+
+The app encodes the calldata with viem and shows a **plain-language summary** of what the proposal will call before it sends `propose`. Targets outside the allowlist are blocked. Values outside the onchain bounds revert when executed, so the summary shows the bounds.
+
+## States
+
+| State | Behaviour |
+| --- | --- |
+| CARB addresses not set | "CARB is not live yet". |
+| Wallet not connected | Proposals are visible; delegation, voting and proposing need a wallet. |
+| No delegated votes | Voting buttons explain that delegation is needed. |
+
+## Related
+
+[Token page](/docs/app/token) · [Governance (concepts)](/docs/token/governance) · [Risks and legal](/docs/token/risks-and-legal)

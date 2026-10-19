@@ -1,0 +1,47 @@
+---
+title: Token (CARB)
+description: The /app/token page - CARB supply, your balance and tier, and the stake, unstake and withdraw actions.
+---
+
+Route: `/app/token` (sidebar: **Token**). It shows the planned CARB utility token and lets you stake it for a fee tier. CARB is **not launched yet**; background is in the [CARB section](/docs/token).
+
+<Callout type="error" title="Legal notice">
+  Not investment advice. Not an offer or solicitation. CARB may be restricted in your jurisdiction. No returns are promised. The contracts are unaudited. Get your own advice.
+</Callout>
+
+## Configuration
+
+Needs `NEXT_PUBLIC_CARB_TOKEN` and `NEXT_PUBLIC_CARB_STAKING`. These variables are optional and are **not** listed as required in the missing-configuration banner. If they are unset, the page shows a **"CARB is not live yet"** state and sends nothing. See [Environment variables](/docs/deployment/environment-variables).
+
+## What it reads
+
+| Item | Source |
+| --- | --- |
+| Total supply | `CarbToken` `totalSupply()` |
+| Your CARB balance | `balanceOf(wallet)` |
+| Your tier | `CarbStaking.tierOf(wallet)` |
+| Staked amount, pending and matured stake, warm-up status, cooling amount and cooldown end | `positionOf(wallet)` and `effectiveStake(wallet)` |
+| Tier table: thresholds and discounts | Read from the staking contract, not hard-coded. Discounts are shares **of the trading fee**. |
+
+## Actions
+
+| Button | Contract calls | Notes |
+| --- | --- | --- |
+| **Stake** | If the allowance is too low: `CarbToken.approve(staking, amount)`; then `CarbStaking.stake(amount)` | Approve-then-stake, no permit. New stake is pending until the warm-up has passed. |
+| **Unstake** | `CarbStaking.unstake(amount)` | Lowers your tier immediately and starts (or restarts) the cooldown. |
+| **Withdraw** | `CarbStaking.withdraw()` | Enabled after the cooldown; returns the cooled CARB. |
+
+Durations are shown from the contract in seconds, converted to days and hours. Staked CARB carries **no votes**: delegate unstaked CARB on the [Governance page](/docs/app/governance) if you want to vote.
+
+## States
+
+| State | Behaviour |
+| --- | --- |
+| CARB addresses not set | "CARB is not live yet". |
+| Wallet not connected | Supply and the tier table load; your position shows a connect prompt. |
+| Warm-up | Pending stake is shown with the time until it counts toward the tier. |
+| Cooldown | Cooling amount and the time until **Withdraw** is enabled. |
+
+## Related
+
+[Staking and tiers](/docs/token/staking-and-tiers) · [Governance page](/docs/app/governance) · [What CARB does not do](/docs/token/what-carb-does-not-do)

@@ -1,0 +1,87 @@
+---
+title: Local Hardhat
+description: Run a local EVM node, deploy Carbonized to it and point the web app at chain id 31337.
+---
+
+Use a local chain for fast iteration with no faucet or RPC limits.
+
+## Local network settings
+
+Hardhat defaults:
+
+| Item | Value |
+| --- | --- |
+| Chain id | `31337` |
+| RPC | `http://127.0.0.1:8545` |
+| Accounts | 20, each with 10,000 ETH (`hardhat` network) |
+| Contract size | `allowUnlimitedContractSize: true` on `hardhat` and `localhost`, so the oversized `CarbonCreditNFT` deploys |
+
+<Steps>
+<Step>
+
+### Start a node
+
+In your Hardhat project:
+
+```bash
+npx hardhat node
+```
+
+</Step>
+<Step>
+
+### Deploy
+
+In a second terminal:
+
+Run your deployment script against the `localhost` network:
+
+```bash
+npx hardhat run <deploy-script> --network localhost
+```
+
+The script deploys the same set as the [Robinhood deploy](/docs/deployment/robinhood-testnet): NFT, three CCTs, a mock payment token (`MockERC20`, deployed with 18 decimals by the script; 100,000 minted to each of the first 10 accounts; the marketplace reads whatever `decimals()` the token has, 2 to 18), marketplace (Verra CCT), `MockFunctionsRouter`, `EmissionVerifier`, `RegistrySync`, `CarbonPriceOracle`. It grants `NATIVE_ISSUER_ROLE` to the verifier and deployer, `WRAPPER_ROLE` and `KYC_ROLE` to the deployer, and the deployer issues test credits with `mintCredit` to accounts 1 to 5 so they can wrap and sell. There is no faucet or starter-credit function. Deploy `CarbonRegistry(admin)` separately if you want the Company and Trader pages (it needs no role on the NFT).
+
+</Step>
+<Step>
+
+### Configure the web app
+
+```bash
+NEXT_PUBLIC_NETWORK=hardhat
+NEXT_PUBLIC_CHAIN_ID=31337
+NEXT_PUBLIC_RPC_URL=http://127.0.0.1:8545
+```
+
+When `NEXT_PUBLIC_NETWORK=hardhat` (or the chain id is `31337`) and a contract address variable is unset, the app falls back to Hardhat's deterministic addresses for a fresh node and deployer account 0:
+
+| Contract | Fallback address |
+| --- | --- |
+| `CarbonCreditNFT` | `0x5FbDB2315678afecb367f032d93F642f64180aa3` |
+| `CarbonCreditToken` (Verra) | `0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0` |
+| `CarbonMarketplace` | `0x0165878A594ca255338adfa4d48449f69242Eb8F` |
+| `CarbonPriceOracle` | `0x610178dA211FEF7D417bC0e6FeD39F05609AD788` |
+| `EmissionVerifier` | `0x2279B7A0a67DB372996a5FaB50D91eAA73d2eBe6` |
+| Mock payment token | `0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9` |
+
+If you deploy more than once on the same node, or from another account, addresses differ; set the `NEXT_PUBLIC_*` variables explicitly.
+
+</Step>
+<Step>
+
+### Connect a wallet
+
+Add the local network to your wallet (RPC `http://127.0.0.1:8545`, chain id `31337`, currency ETH) and import one of the node's printed development accounts. Those keys are public; never use them anywhere else.
+
+</Step>
+</Steps>
+
+## Tests
+
+```bash
+npx hardhat test
+```
+
+<Callout type="info">
+  Wallet connection through Reown AppKit still needs `NEXT_PUBLIC_REOWN_PROJECT_ID`. See [Reown AppKit](/docs/wallet/reown-appkit); injected wallets work on the local chain.
+</Callout>

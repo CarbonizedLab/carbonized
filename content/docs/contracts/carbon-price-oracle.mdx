@@ -1,0 +1,181 @@
+---
+title: CarbonPriceOracle
+description: Price feed per methodology fed by Chainlink Functions from operator-provided sources, with a multisig manual-report fallback, bounds, confidence and staleness checks.
+---
+
+**Inherits:** `FunctionsConsumer` (itself `FunctionsClient` + `AccessControl`), `AutomationCompatibleInterface`
+
+Requests a median price from operator-provided HTTP sources through Chainlink Functions and stores the result. A multisig can post a price manually when Functions is unavailable. **No Carbonized contract reads the oracle onchain.** If a contract ever does, it must use `getLatestPrice(methodology)` (staleness-checked) and never `getPrice`.
+
+<Callout type="warn" title="Mocked on testnet; nothing is hard-coded">
+On the testnet deployment the router is `MockFunctionsRouter`, which never calls back, and the script does not call `setFunctionsConfig`, so no Functions price is ever stored there. A live Functions feed needs a real Chainlink Functions router, DON id, a funded subscription listing this contract as consumer, an uploaded source (`setSource`) and configured price sources (`setPriceSources`). **No data source is hard-coded in the contract**: every URL is chosen by the operator and stored onchain. Check that Chainlink Functions is available on the target chain first; the repository does not assume it. Without it the manual fallback (`reportPrice`) still works. The web app treats oracle values as indicative only.
+</Callout>
+
+## Constructor
+
+```solidity
+constructor(address functionsRouter_)
+```
+
+Reverts `Invalid router` for the zero address. The deployer gets `DEFAULT_ADMIN_ROLE` and `PRICE_UPDATER_ROLE`. `AUTOMATION_ROLE` and `ORACLE_REPORTER_ROLE` are **not** granted at construction. Roles can be granted to a multisig with `grantRole`.
+
+## Functions base (`FunctionsConsumer`)
+
+Shared by `CarbonPriceOracle`, [`EmissionVerifier`](/docs/contracts/emission-verifier) and [`RegistrySync`](/docs/contracts/registry-sync). All setters are `DEFAULT_ADMIN_ROLE`.
+
+| Member | Behavior |
+| --- | --- |
+| `functionsRouter`, `donId`, `subscriptionId` | router and DON / subscription used for requests |
+| `gasLimit` | callback gas, default `300000` |
+| `setFunctionsConfig(donId_, subscriptionId_, gasLimit_)` | `gasLimit_` must be 200,000 to 1,000,000 (`MIN_GAS_LIMIT`, `MAX_GAS_LIMIT`), else `Gas limit out of bounds`. Emits `FunctionsConfigUpdated`. |
+| `source()` | the JavaScript the DON executes (empty until set) |
+| `sourceHash()` | `keccak256(source)`, `bytes32(0)` while unset. Compare it with the hash of the reference file in `scripts/functions/` to prove what code runs. |
+| `setSource(string)` | 1 to `MAX_SOURCE_LENGTH` (16,000) bytes, else `Invalid source length`. Emits `SourceUpdated(sourceHash, length)`. Requests already in flight keep the source they were sent with. |
+| `setDONHostedSecrets(slotId, version)` | attaches DON-hosted secrets to every request; `version = 0` means no secrets (the default; the reference sources need none). Emits `DONHostedSecretsUpdated`. Remote URL-hosted secrets are not supported. |
+| `secretsSlotId()`, `secretsVersion()` | current secrets reference |
+| `MAX_REQUEST_ARGS` / `MAX_REQUEST_ARG_LENGTH` | 8 string arguments, 512 bytes each |
+
+A request reverts `Source not set`, `Functions not configured` (zero DON id or subscription `0`), `Invalid args` or `Arg too long` when its inputs are not valid. Operator-provided URL templates must start with `https://` (`URL must be https`, `Invalid URL length`).
+
+## Request and response
+
+The contract builds the request arguments onchain:
+
+| Argument | Value |
+| --- | --- |
+| `args[0]` | methodology (`ICM_COMPLIANCE`, `VERRA_VCS` or `GOLD_STANDARD`) |
+| `args[1]` | `maxSourceSpreadBps` as a decimal string |
+| `args[2..]` | the URL templates set with `setPriceSources` (1 to 5); `{methodology}` is substituted by the source |
+
+Each endpoint is expected to answer HTTP 200 with JSON `{ "price": <USD per tonne>, "volume24h": <USD, optional> }`. The reference source (`scripts/functions/price.js`) takes the median of the valid sources and refuses a spread above `maxSourceSpreadBps`. If your provider uses another schema, put an adapter you operate in front of it.
+
+The DON must answer with exactly **128 bytes**:
+
+```solidity
+abi.encode(uint256 price, uint256 volume24h, uint256 confidence, uint256 dataPoints)
+```
+
+| Field | Meaning | Validation |
+| --- | --- | --- |
+| `price` | USD per tonne, **8 decimals**, median of the valid sources | within `[minPrice, maxPrice]` |
+| `volume24h` | USD, 8 decimals | at most `MAX_VOLUME` (`uint128` max) |
+| `confidence` | `round(100 * validSources / configuredSources)` in the reference source | at most 100 and at least `minConfidence` |
+| `dataPoints` | number of valid sources | 1 to `MAX_PRICE_SOURCES` |
+
+The old bit-packed `uint256` response is rejected as `Malformed response`.
+
+## Configuration and state
+
+| Name | Default | Notes |
+| --- | --- | --- |
+| `methodologies` | `ICM_COMPLIANCE`, `VERRA_VCS`, `GOLD_STANDARD` | iterated by "update all"; `isSupportedMethodology` flags them |
+| `priceSourceUrls` | empty | set with `setPriceSources`; requests revert `No price sources` until set |
+| `maxSourceSpreadBps` | `2000` (20 %) | allowed range 100 to 5000 bps; passed to the source |
+| `updateInterval` | `1 hours` | admin-set base interval (5 minutes to 24 hours); never overwritten by fulfilments |
+| `currentUpdateInterval()` | | `15 minutes` (`FAST_UPDATE_INTERVAL`) while any methodology is in high-volatility mode and that is shorter than `updateInterval`, else `updateInterval` |
+| `highVolatilityThreshold` | `10` (%) | 1 to 50 |
+| `minPrice`, `maxPrice` | `1e6`, `1e12` | 0.01 and 10,000 USD per tonne (8 decimals); `PRICE_CEILING` = `1e15` |
+| `minConfidence` | `60` | 1 to 100 |
+| `maxStaleness` | `24 hours` | `MIN_STALENESS` 1 hour to `MAX_STALENESS` 7 days |
+| `maxReportDeviationBps` | `1000` (10 %) | allowed range 10 to 5000 bps; applies to manual reports |
+| `lastPriceManual[methodology]` | `false` | `true` when the stored price came from `reportPrice`, `false` when from Functions |
+| `requestMethodology[requestId]` | | binds each request to the methodology it was sent for |
+| `lastUpdateTime` | `0` | set by the update-all path |
+
+```solidity
+struct PriceData {
+    uint256 price;       // USD per tonne, 8 decimals
+    uint256 timestamp;   // block time the price was stored
+    uint256 volume24h;   // USD, 8 decimals
+    uint8   confidence;  // 0-100 (manual reports: 100)
+    uint256 dataPoints;  // sources aggregated (manual reports: 1)
+}
+```
+
+Storage: `prices[methodology]`. History is only available through `PriceUpdated` events.
+
+## Functions
+
+| Function | Access | Behavior |
+| --- | --- | --- |
+| `updatePrice(methodology)` | `PRICE_UPDATER_ROLE` | Sends one Functions request. Reverts `Unsupported methodology`, `No price sources`. |
+| `updateAllPrices()` | `PRICE_UPDATER_ROLE` | One request per methodology; sets `lastUpdateTime` |
+| `checkUpkeep(bytes)` | public view | `upkeepNeeded = now - lastUpdateTime >= currentUpdateInterval()` |
+| `performUpkeep(bytes)` | `AUTOMATION_ROLE` | Re-validates (`Update not due`), then runs update-all |
+| `reportPrice(methodology, price, volume24h, observedAt)` | `ORACLE_REPORTER_ROLE` | Manual fallback, see below |
+| `getPrice(methodology)` | view | `(price, timestamp)`. No staleness check: do not use for onchain decisions. |
+| `getPriceData(methodology)` | view | `PriceData` |
+| `getLatestPrice(methodology)` | view | Reverts `Price not available` if never set, `Price too stale` if older than `maxStaleness` |
+| `getPriceSources()` | view | the configured URL templates |
+| `setPriceSources(string[])` | `DEFAULT_ADMIN_ROLE` | 1 to `MAX_PRICE_SOURCES` (5) `https://` URL templates, else `Invalid source count`; replaces the list; emits `PriceSourcesUpdated` |
+| `setMaxSourceSpread(bps)` | `DEFAULT_ADMIN_ROLE` | 100 to 5000, else `Invalid spread`; emits `MaxSourceSpreadChanged` |
+| `setMaxReportDeviation(bps)` | `DEFAULT_ADMIN_ROLE` | 10 to 5000, else `Invalid deviation`; emits `MaxReportDeviationChanged` |
+| `setUpdateInterval(interval)` | `DEFAULT_ADMIN_ROLE` | 5 minutes to 24 hours, else `Invalid interval` |
+| `setVolatilityThreshold(threshold)` | `DEFAULT_ADMIN_ROLE` | 1 to 50, else `Invalid threshold` |
+| `setPriceBounds(min, max)` | `DEFAULT_ADMIN_ROLE` | `0 < min < max <= 1e15`, else `Invalid bounds` |
+| `setMinConfidence(value)` | `DEFAULT_ADMIN_ROLE` | 1 to 100, else `Invalid confidence` |
+| `setMaxStaleness(value)` | `DEFAULT_ADMIN_ROLE` | 1 hour to 7 days, else `Invalid staleness` |
+| `setFunctionsConfig`, `setSource`, `setDONHostedSecrets` | `DEFAULT_ADMIN_ROLE` | see [Functions base](#functions-base-functionsconsumer) |
+| `grantAutomationRole(address)` | `DEFAULT_ADMIN_ROLE` | Grants `AUTOMATION_ROLE` (for example to the Automation forwarder) |
+
+Requests only succeed once `donId` and `subscriptionId` point at a funded Chainlink Functions subscription that lists this contract as a consumer.
+
+## Fulfillment (`fulfillRequest`, called by the router)
+
+- Looks up the methodology the request id was sent for; unknown or replayed ids revert `Unknown request`. The answer is stored under **that** methodology only.
+- It never reverts on DON output; a bad answer emits `PriceRequestFailed(methodology, reason)` and nothing is stored:
+
+| Reason | Cause |
+| --- | --- |
+| the DON error text | the run returned an error |
+| `Malformed response` | response is not 128 bytes |
+| `Price out of bounds` | price outside `[minPrice, maxPrice]` |
+| `Invalid response` | confidence above 100, volume above `MAX_VOLUME`, or `dataPoints` not in 1 to 5 |
+| `Confidence too low` | confidence below `minConfidence` |
+
+- If there was a previous price and the percent change is at least `highVolatilityThreshold`, it emits `HighVolatilityDetected` and flags the methodology as volatile (tracked by `volatileCount`).
+- Otherwise it sets `lastPriceManual[methodology] = false`, stores `PriceData` and emits `PriceUpdated`.
+
+## Manual fallback: `reportPrice`
+
+For when Chainlink Functions is unavailable or not yet configured. It needs no Functions configuration. The role `ORACLE_REPORTER_ROLE` is meant for a multisig and is never granted by the constructor; the admin grants it.
+
+| Check | Revert |
+| --- | --- |
+| methodology is supported | `Unsupported methodology` |
+| `observedAt` not in the future and at most `MAX_REPORT_AGE` (1 hour) old | `Stale report` |
+| price within `[minPrice, maxPrice]` | `Price out of bounds` |
+| `volume24h` at most `MAX_VOLUME` | `Volume out of bounds` |
+| at least `MIN_REPORT_SPACING` (5 minutes) after the previous price of that methodology | `Report too soon` |
+| if the previous price is younger than `maxStaleness`: change at most `maxReportDeviationBps` | `Deviation too large` |
+
+A stale or missing previous price has no deviation anchor, so the feed can be restarted after an outage with an in-bounds price. A report is stored with confidence `100` and `dataPoints = 1`, sets `lastPriceManual[methodology] = true`, and emits `PriceReported` and `PriceUpdated`. Consumers keep using `getLatestPrice`, `getPrice` and `getPriceData`. The web app labels the dashboard price "Oracle" or "Manual report" from `lastPriceManual("VERRA_VCS")`.
+
+## Events
+
+| Event | Parameters |
+| --- | --- |
+| `PriceRequested` | `bytes32 indexed requestId, string indexed methodology` |
+| `PriceUpdated` | `string indexed methodology, uint256 price, uint256 volume24h, uint8 confidence, uint256 timestamp` |
+| `PriceReported` | `string indexed methodology, address indexed reporter, uint256 price, uint256 volume24h, uint256 observedAt` |
+| `HighVolatilityDetected` | `string indexed methodology, uint256 oldPrice, uint256 newPrice, uint256 changePercent` |
+| `PriceRequestFailed` | `string indexed methodology, string reason` |
+| `PriceSourcesUpdated` | `string[] urls` |
+| `MaxSourceSpreadChanged` | `uint256 maxSourceSpreadBps` |
+| `MaxReportDeviationChanged` | `uint256 maxReportDeviationBps` |
+| `UpdateIntervalChanged` | `uint256 interval` |
+| `VolatilityThresholdChanged` | `uint256 threshold` |
+| `PriceBoundsChanged` | `uint256 minPrice, uint256 maxPrice` |
+| `MinConfidenceChanged` | `uint8 minConfidence` |
+| `MaxStalenessChanged` | `uint256 maxStaleness` |
+| `FunctionsConfigUpdated` | `bytes32 donId, uint64 subscriptionId, uint32 gasLimit` |
+| `SourceUpdated` | `bytes32 indexed sourceHash, uint256 length` |
+| `DONHostedSecretsUpdated` | `uint8 slotId, uint64 version` |
+
+`SourceCodeUpdated` and the `updateSourceCode` function no longer exist; see [Events & ABIs](/docs/contracts/events-and-abis#oracle-rewrite-chainlink-functions).
+
+## Frontend note
+
+The price oracle's `getLatestPrice` takes a **methodology string**. The app reads it with the methodology argument and shows the result only as an *indicative* value (for example in the portfolio), labelled "Oracle" or "Manual report" on the dashboard. On testnet there is usually no stored price; see [Events & ABIs](/docs/contracts/events-and-abis).
+
+Operator guide: `contracts/scripts/functions/README.md`.
