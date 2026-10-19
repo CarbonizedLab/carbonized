@@ -23,7 +23,19 @@ ALLOWLIST = {
     ("scripts/security-gate.py", 35),  # self-reference: comment line
 }
 
+FORBIDDEN_PATHS = [
+    (r"(^|/)\.env($|\.(?!example$))", "env-file"),
+    (r"(^|/)\.secrets?(/|$)", "secrets-dir"),
+    (r"(^|/)(deployments|release)/.*\.(log|txt)$", "deploy-artefact"),
+    (r"(^|/)contracts/deployments/vercel-env", "deploy-env-dump"),
+    (r"\.(pem|p12|pfx|keystore)$", "key-file"),
+    (r"(^|/)(CLAUDE|HANDOFF|RUNBOOK|SDD)[A-Z_.-]*\.md$", "internal-doc"),
+]
+
 patterns = [
+    (r"\bgh[ousr]_[A-Za-z0-9]{30,}", "github-token"),
+    (r"\b(?:PRIVATE_KEY|MNEMONIC|SEED_PHRASE|API_KEY|SECRET_KEY|ACCESS_TOKEN)\s*=\s*[\"']?(?!\s|$|your_|<|dummy|changeme|xxx)[A-Za-z0-9/+_-]{16,}", "secret-assignment"),
+    (r"\bCLOUDFLARE_API_TOKEN\s*=\s*[\"']?[A-Za-z0-9_-]{20,}", "cloudflare-token"),
     (r"ghp_[A-Za-z0-9]{36,}", "github-pat"),
     (r"github_pat_[A-Za-z0-9_]{20,}", "github-pat-fg"),
     (r"-----BEGIN [A-Z ]*PRIVATE KEY-----", "private-key-block"),
@@ -41,6 +53,9 @@ patterns = [
 
 hits = []
 for rel in files:
+    for pat, kind in FORBIDDEN_PATHS:
+        if re.search(pat, rel):
+            hits.append((rel, 0, kind))
     if rel == "pnpm-lock.yaml" or "/fonts/" in rel or rel == "scripts/security-gate.py":
         continue  # lockfile: generated; fonts: base64 glyph data
     p = root / rel

@@ -73,3 +73,14 @@ next-env.d.ts
 __pycache__/
 /wallet-page.html
 /wrangler-deploy*.log
+
+# secrets and operator material - never commit
+*.pem
+*.key
+*.keystore
+*.p12
+.secrets/
+/contracts/deployments/*.partial.json
+/contracts/release/*.json
+!/contracts/release/mainnet-release-manifest.example.json
+*.private.*

@@ -36,6 +36,15 @@ export const linkItems: LinkItemType[] = [
     secondary: true,
   },
   {
+    type: 'icon',
+    icon: <Icons.gitHub className='size-4' />,
+    text: 'GitHub',
+    label: 'Carbonized on GitHub',
+    url: 'https://github.com/CarbonizedLab/carbonized',
+    external: true,
+    secondary: true,
+  },
+  {
     icon: <Icons.info />,
     text: 'Docs',
     url: '/docs',

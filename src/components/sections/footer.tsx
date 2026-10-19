@@ -107,6 +107,16 @@ export function Footer() {
                 X @CarbonizedApp
               </a>
             </li>
+            <li>
+              <a
+                className='transition-colors hover:text-foreground'
+                href='https://github.com/CarbonizedLab/carbonized'
+                rel='noreferrer'
+                target='_blank'
+              >
+                GitHub
+              </a>
+            </li>
           </ul>
         </div>
       </div>
@@ -125,6 +135,11 @@ function Copyright() {
         </p>
       </div>
       <div className='hidden sm:block' />
+      <p className='text-muted-foreground/80 text-xs sm:col-span-3 sm:text-center'>
+        Beta on Robinhood Chain mainnet. Contracts are not yet independently
+        audited, and listed credits are demo inventory, not verified real-world
+        emissions reductions.
+      </p>
     </div>
   );
 }

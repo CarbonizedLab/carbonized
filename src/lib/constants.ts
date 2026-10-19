@@ -6,6 +6,7 @@ export const isProduction = process.env.NODE_ENV === 'production';
  */
 export const CONTACT_EMAIL = process.env.NEXT_PUBLIC_CONTACT_EMAIL || '';
 export const CONTACT_X_URL = 'https://x.com/CarbonizedApp';
+export const GITHUB_URL = 'https://github.com/CarbonizedLab/carbonized';
 
 const LOCAL_URL = 'http://localhost:3000';
 const PRODUCTION_FALLBACK_URL = 'https://carbonized.app';
