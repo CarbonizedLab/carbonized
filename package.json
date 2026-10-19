@@ -21,7 +21,8 @@
     "check:spelling": "cspell -c .cspell.jsonc --no-progress --no-summary --no-must-find-files --unique --cache",
     "typegen": "fumadocs-mdx && next typegen",
     "typecheck": "pnpm run typegen && tsc --noEmit",
-    "prepare": "lefthook install"
+    "prepare": "lefthook install",
+    "cf:build": "opennextjs-cloudflare build && node scripts/build-static-pages.mjs"
   },
   "dependencies": {
     "@bprogress/next": "^3.2.12",

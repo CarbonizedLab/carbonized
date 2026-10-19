@@ -36,7 +36,7 @@ const faq = [
   {
     question: 'Is there a Carbonized token?',
     answer:
-      'A utility token called CARB is planned but is not launched yet. It would only add optional utilities (fee tiers, an issuer bond and governance) and carries no financial promises. See the token docs at /docs/token for details and risks.',
+      'The official CARB token contract is 0x48d134b04238ab7fb9134e6fc47149c39f3d022c on Robinhood Chain. Its optional utilities are not live yet; they would only add optional utilities (fee tiers, an issuer bond and governance) and carries no financial promises. See the token docs at /docs/token for details and risks.',
   },
   {
     question: 'Do I need CARB to use Carbonized?',

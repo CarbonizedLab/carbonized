@@ -16,9 +16,9 @@ import { type Messages, useT } from '@/lib/i18n';
 
 const messages: Messages = {
   en: {
-    'notLive.title': 'CARB is not live yet',
+    'notLive.title': 'CARB utilities are not live yet',
     'notLive.body':
-      'The CARB utility token has not been launched on this deployment, so there is nothing to stake, bond or vote with. Everything else in Carbonized (trading, retirement, certificates) works without it. CARB only adds optional fee tiers, a bond for the bond-based issuer path and parameter governance.',
+      'The CARB utility contracts (staking, bond and governance) have not been enabled on this deployment, so there is nothing to stake, bond or vote with yet. Everything else in Carbonized (trading, retirement, certificates) works without it. CARB only adds optional fee tiers, a bond for the bond-based issuer path and parameter governance.',
     'notLive.docs': 'Read about CARB',
     'legal.title': 'Utility only. Not investment advice.',
     'legal.body':

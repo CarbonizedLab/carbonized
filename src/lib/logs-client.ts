@@ -52,6 +52,14 @@ const MAX_LOG_RANGE = 9_000n;
  * `eth_getLogs` at 10,000 blocks; a single wide query throws
  * "block range exceeds maximum allowed" instead of paging automatically.
  */
+
+const LOG_CONCURRENCY = 6;
+// Full windows lie entirely in the past, so their logs never change. Caching
+// them makes page-to-page navigation skip the history re-scan.
+const windowCache = new Map<string, unknown[]>();
+const bigintReplacer = (_key: string, value: unknown) =>
+  typeof value === 'bigint' ? value.toString() : value;
+
 export const getLogsChunked = async <logsReturn>(
   client: PublicClient,
   params: { fromBlock: bigint; toBlock: bigint } & Record<string, unknown>
@@ -60,30 +68,57 @@ export const getLogsChunked = async <logsReturn>(
   const getLogs = client.getLogs as unknown as (
     request: typeof params
   ) => Promise<logsReturn[]>;
-  const logs: logsReturn[] = [];
-  let start = fromBlock;
-  while (start <= toBlock) {
-    let end =
-      start + MAX_LOG_RANGE - 1n > toBlock
-        ? toBlock
-        : start + MAX_LOG_RANGE - 1n;
-    let part: logsReturn[] | undefined;
-    while (part === undefined) {
-      try {
-        part = await getLogs({
-          ...rest,
-          fromBlock: start,
-          toBlock: end,
-        });
-      } catch (error) {
-        if (end <= start) {
-          throw error;
-        }
-        end = start + (end - start) / 2n;
-      }
+  const filterKey = JSON.stringify(rest, bigintReplacer);
+
+  const fetchWindow = async (
+    start: bigint,
+    last: bigint
+  ): Promise<logsReturn[]> => {
+    const full = last - start + 1n === MAX_LOG_RANGE;
+    const key = `${filterKey}|${start}`;
+    const hit = full ? windowCache.get(key) : undefined;
+    if (hit) {
+      return hit as logsReturn[];
     }
-    logs.push(...part);
-    start = end + 1n;
+    const out: logsReturn[] = [];
+    let from = start;
+    while (from <= last) {
+      let end = last;
+      let part: logsReturn[] | undefined;
+      while (part === undefined) {
+        try {
+          part = await getLogs({ ...rest, fromBlock: from, toBlock: end });
+        } catch (error) {
+          if (end <= from) {
+            throw error;
+          }
+          end = from + (end - from) / 2n;
+        }
+      }
+      out.push(...part);
+      from = end + 1n;
+    }
+    if (full) {
+      windowCache.set(key, out);
+    }
+    return out;
+  };
+
+  const windows: Array<[bigint, bigint]> = [];
+  for (let start = fromBlock; start <= toBlock; start += MAX_LOG_RANGE) {
+    const last = start + MAX_LOG_RANGE - 1n;
+    windows.push([start, last > toBlock ? toBlock : last]);
+  }
+  const logs: logsReturn[] = [];
+  for (let i = 0; i < windows.length; i += LOG_CONCURRENCY) {
+    const batch = await Promise.all(
+      windows
+        .slice(i, i + LOG_CONCURRENCY)
+        .map(([start, last]) => fetchWindow(start, last))
+    );
+    for (const part of batch) {
+      logs.push(...part);
+    }
   }
   return logs;
 };

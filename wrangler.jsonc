@@ -1,7 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "carbonized",
-  "main": ".open-next/worker.js",
+  "main": "worker-static.mjs",
   "compatibility_date": "2025-09-01",
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": true,
@@ -9,8 +9,10 @@
     { "pattern": "carbonized.app", "custom_domain": true },
     { "pattern": "www.carbonized.app", "custom_domain": true }
   ],
+  "observability": { "enabled": true },
   "assets": {
     "directory": ".open-next/assets",
-    "binding": "ASSETS"
+    "binding": "ASSETS",
+    "html_handling": "none"
   }
 }

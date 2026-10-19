@@ -4,7 +4,7 @@ export const messages: Messages = {
   en: {
     'page.title': 'Issuer',
     'page.description':
-      'Credits are created only by accounts holding NATIVE_ISSUER_ROLE on the carbon credit NFT. This page explains the role, lists the current issuers and, for issuer wallets, issues credits.',
+      'Credits are created only by approved issuers. This page explains how issuers work, lists the current ones and, for issuer wallets, lets them issue credits.',
     'page.docs': 'Issuer guide',
 
     'status.title': 'Your wallet',
@@ -16,14 +16,14 @@ export const messages: Messages = {
     'status.notConnectedDesc':
       'Connect your wallet to see whether it holds the issuer role. The information below is public.',
     'status.failed': 'Could not read the role from the chain. Try again later.',
-    'status.issuer': 'This wallet holds NATIVE_ISSUER_ROLE',
+    'status.issuer': 'This wallet is an approved issuer',
     'status.issuerDesc':
       'You can issue credits below. Every issuance is permanent, public and attributed to this wallet.',
     'status.paused':
       'The NFT contract is paused: minting reverts until it is unpaused.',
     'status.notIssuer': 'This wallet is not an issuer',
     'status.notIssuerDesc':
-      'You can browse everything here, but the issuance forms stay disabled.',
+      'You can browse everything here. Issuing credits is limited to approved issuers, so the forms stay locked for now.',
     'status.admin': 'Admin: can grant and revoke NATIVE_ISSUER_ROLE',
 
     'apply.title': 'How to become an issuer',
@@ -32,14 +32,14 @@ export const messages: Messages = {
     'apply.step2':
       'Ask the Carbonized operator to review your application (see the issuer guide for the checklist). Use a multisig wallet address, not a personal key.',
     'apply.step3':
-      'After approval, an admin grants NATIVE_ISSUER_ROLE to your address; it then appears in the public issuer list on this page.',
+      'Once approved, your wallet is added as an issuer and appears in the public issuer list on this page.',
     'apply.docs': 'Read the issuer guide',
 
     'info.title': 'What the issuer role is',
     'info.description':
       'Issuers are trusted parties; the contract is not a verifier.',
     'info.p1':
-      'Only NATIVE_ISSUER_ROLE holders can call mintCredit and batchMint. There is no public mint, faucet or starter pack.',
+      'Only approved issuers can create credits. There is no public mint, faucet or starter pack.',
     'info.p2':
       'Each credit needs a non-empty registry serial, a non-zero evidence/oracle proof hash, 1 to 10,000,000 tonnes and a vintage between 2015 and 2050. One serial can be tokenized once, ever.',
     'info.p3':
@@ -52,20 +52,20 @@ export const messages: Messages = {
 
     'directory.title': 'Public issuer list',
     'directory.description':
-      'Current NATIVE_ISSUER_ROLE holders, rebuilt from onchain role events and confirmed with hasRole.',
+      'Wallets that are currently approved to issue credits, rebuilt from public onchain records.',
     'directory.error': 'Could not load the issuer list.',
-    'directory.empty': 'No account currently holds NATIVE_ISSUER_ROLE.',
+    'directory.empty': 'No wallet is approved to issue credits yet.',
     'directory.verifier': 'Emission verifier contract',
     'directory.you': 'You',
     'directory.since': 'since block {block}',
     'directory.partial':
-      'Only a recent block window was scanned. Issuers granted earlier may be missing from this list; set NEXT_PUBLIC_DEPLOY_BLOCK to scan from deployment.',
+      'This list only covers recent activity, so earlier issuers may be missing.',
 
     'issue.title': 'Issue credits',
     'issue.description':
       'Each credit becomes one NFT carrying the registry serial and your evidence hash. Nothing can be edited after minting.',
     'issue.disabledNote':
-      'The forms are disabled because the connected wallet does not hold NATIVE_ISSUER_ROLE. See how to apply above.',
+      'Issuing credits is limited to approved issuers, and this wallet is not approved yet. Follow the steps in "How to become an issuer" to apply.',
     'issue.pausedNote':
       'The NFT contract is paused, so issuance is disabled until it is unpaused.',
     'tabs.single': 'Single credit',
@@ -232,7 +232,7 @@ export const messages: Messages = {
   zh: {
     'page.title': '签发方',
     'page.description':
-      '只有在碳信用 NFT 上持有 NATIVE_ISSUER_ROLE 的账户才能创建碳信用。本页说明该角色、列出当前签发方，并为签发方钱包提供签发功能。',
+      '只有获批的签发方才能创建碳信用。本页说明签发方机制、列出当前签发方，并为签发方钱包提供签发功能。',
     'page.docs': '签发方指南',
 
     'status.title': '您的钱包',
@@ -244,7 +244,7 @@ export const messages: Messages = {
     'status.notConnectedDesc':
       '连接钱包以查看其是否持有签发方角色。以下信息均为公开信息。',
     'status.failed': '无法从链上读取角色，请稍后重试。',
-    'status.issuer': '此钱包持有 NATIVE_ISSUER_ROLE',
+    'status.issuer': '此钱包是获批签发方',
     'status.issuerDesc':
       '您可以在下方签发碳信用。每次签发都是永久、公开的，并记录在此钱包名下。',
     'status.paused': 'NFT 合约已暂停：在取消暂停之前，铸造会失败。',
@@ -258,13 +258,13 @@ export const messages: Messages = {
     'apply.step2':
       '请 Carbonized 运营方审核您的申请（清单见签发方指南）。请使用多签钱包地址，而不是个人密钥。',
     'apply.step3':
-      '审核通过后，管理员会向您的地址授予 NATIVE_ISSUER_ROLE；之后它会出现在本页的公开签发方列表中。',
+      '审核通过后，您的钱包会被加入签发方，并出现在本页的公开签发方列表中。',
     'apply.docs': '阅读签发方指南',
 
     'info.title': '签发方角色是什么',
     'info.description': '签发方是受信任的一方；合约本身不是核证机构。',
     'info.p1':
-      '只有 NATIVE_ISSUER_ROLE 持有者可以调用 mintCredit 和 batchMint。不存在公开铸造、水龙头或新手礼包。',
+      '只有获批的签发方可以创建碳信用。不存在公开铸造、水龙头或新手礼包。',
     'info.p2':
       '每笔信用都需要非空的注册表序列号、非零的证据/预言机证明哈希、1 至 10,000,000 吨以及 2015 至 2050 之间的年份。同一序列号永远只能被代币化一次。',
     'info.p3':
@@ -277,20 +277,20 @@ export const messages: Messages = {
 
     'directory.title': '公开签发方列表',
     'directory.description':
-      '当前 NATIVE_ISSUER_ROLE 持有者，根据链上角色事件重建并通过 hasRole 确认。',
+      '当前获批签发的钱包，根据公开链上记录重建。',
     'directory.error': '无法加载签发方列表。',
-    'directory.empty': '目前没有账户持有 NATIVE_ISSUER_ROLE。',
+    'directory.empty': '目前还没有获批的签发钱包。',
     'directory.verifier': '排放验证合约',
     'directory.you': '您',
     'directory.since': '自区块 {block}',
     'directory.partial':
-      '仅扫描了最近的区块范围，更早授予的签发方可能不在列表中；设置 NEXT_PUBLIC_DEPLOY_BLOCK 可从部署区块开始扫描。',
+      '此列表仅涵盖近期活动，较早的签发方可能未显示。',
 
     'issue.title': '签发碳信用',
     'issue.description':
       '每笔碳信用对应一个 NFT，包含注册表序列号和您的证据哈希。铸造后无法修改。',
     'issue.disabledNote':
-      '表单已禁用，因为当前钱包不持有 NATIVE_ISSUER_ROLE。请参阅上方的申请方式。',
+      '签发仅限获批的签发方，当前钱包尚未获批。请按“如何成为签发方”中的步骤申请。',
     'issue.pausedNote': 'NFT 合约已暂停，取消暂停之前无法签发。',
     'tabs.single': '单笔信用',
     'tabs.batch': '批量（CSV）',

@@ -65,7 +65,7 @@ const features = [
     Icon: CoinsIcon,
     title: 'CARB utility (coming)',
     description:
-      'CARB is a planned utility token and is not launched yet. Planned utilities only: reduced marketplace trading fees by staking tier (a discount on the fee, never on the price), an issuer bond for the bond-based issuer path, and parameter governance by token holders. No revenue share, no staking rewards, no returns, and no price or allocation commitments. Subject to legal review and independent audit. Not investment advice or an offer.',
+      'CARB is Carbonized\'s utility token (official contract 0x48d134b04238ab7fb9134e6fc47149c39f3d022c). Its utilities are not live yet and are limited to: reduced marketplace trading fees by staking tier (a discount on the fee, never on the price), an issuer bond for the bond-based issuer path, and parameter governance by token holders. No revenue share, no staking rewards, no returns, and no price or allocation commitments. Subject to legal review and independent audit. Not investment advice or an offer.',
     size: 'sm',
     href: '/docs/token',
   },

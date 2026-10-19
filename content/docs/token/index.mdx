@@ -1,10 +1,10 @@
 ---
 title: CARB utility token
-description: What the planned CARB token is for in Carbonized - fee tiers, an optional issuer bond and bounded parameter governance - and what it is not. Not launched yet.
+description: What the CARB token is for in Carbonized - fee tiers, an optional issuer bond and bounded parameter governance - and what it is not.
 ---
 
-<Callout type="warn" title="CARB is not launched yet">
-  CARB has not been launched or distributed. The contracts exist in the repository and are described here so you can review the design. There is no sale, no price and no allocation. Exact parameters are published at launch, and launch also depends on legal advice and permits that are not in place yet. The contracts are **unaudited**.
+<Callout type="warn" title="CARB utilities are not live yet">
+  The CARB token is deployed on Robinhood Chain. Its utility contracts (staking, bond, governance) are not live yet and are described here so you can review the design. This documentation makes no sale, price or allocation commitments. Exact parameters are published at launch, and launch also depends on legal advice and permits that are not in place yet. The contracts are **unaudited**.
 </Callout>
 
 <Callout type="error" title="Legal notice">
@@ -12,6 +12,16 @@ description: What the planned CARB token is for in Carbonized - fee tiers, an op
 </Callout>
 
 CARB is a **utility token** for the Carbonized carbon-credit protocol on Robinhood Chain. It has one fixed supply, minted once at deployment; the exact parameters are published at launch. It has three jobs and nothing else.
+
+## Official contract
+
+| | |
+| --- | --- |
+| Token | CARB |
+| Network | Robinhood Chain (chain id `4663`) |
+| Address | [`0x48d134b04238ab7fb9134e6fc47149c39f3d022c`](https://robinhoodchain.blockscout.com/address/0x48d134b04238ab7fb9134e6fc47149c39f3d022c) |
+
+Verify the address on the explorer. Any other address attributed to CARB is not ours.
 
 ## What CARB does
 
@@ -29,10 +39,10 @@ No revenue share, rewards, APY, buy-back or mint function; no control over credi
 
 ## Technical facts
 
-- ERC-20 with ERC-2612 permit, ERC-5805 votes and burn when deployed as the Carbonized token. Supply can only decrease (holders burning, and slashing, which burns by default).
+- The official CARB at the address above is an external ERC-20. Carbonized does not control its ownership, mint authority, liquidity or upgradeability; read the token source yourself.
 - The voting clock is `block.timestamp`. Robinhood Chain is an Arbitrum Orbit L2 where block numbers are not a wall-clock proxy, so every duration is in **seconds**.
 - Voting power counts only after `delegate(...)` (self-delegation is enough). **Staked and bonded CARB carry no votes.**
-- The Carbonized token contract has no owner, no pause, no blacklist, no transfer tax and no upgradeability.
+- The Carbonized staking, bond and governance contracts are separate from the token and are not live yet.
 - If CARB is launched later through a third-party launchpad, it is an external ERC-20 that Carbonized does not control, and voting goes through a wrapper. See [Using an existing token (launchpad)](/docs/token/external-token).
 
 ## Where it appears in the app

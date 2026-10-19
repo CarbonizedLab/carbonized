@@ -48,7 +48,7 @@ Contract details: [Contracts overview](/docs/contracts/overview).
 └─────────────────────────────────────────┘
 ```
 
-The optional CARB token stack (not launched yet) sits beside this diagram and touches it in two places: `CarbStaking` is the marketplace's fee-discount provider (a failing provider means no discount, never a blocked trade), and `IssuerBond` holds `ISSUER_ADMIN_ROLE` on `CarbonCreditNFT` for the bonded-issuer path. Governance (`CarbGovernor` + `CarbTimelock`) holds only parameter and slasher roles on the marketplace, staking and bond contracts, never issuance or escrow. See [Contracts overview](/docs/contracts/overview).
+The optional CARB token stack (token contract live, utility contracts not live yet) sits beside this diagram and touches it in two places: `CarbStaking` is the marketplace's fee-discount provider (a failing provider means no discount, never a blocked trade), and `IssuerBond` holds `ISSUER_ADMIN_ROLE` on `CarbonCreditNFT` for the bonded-issuer path. Governance (`CarbGovernor` + `CarbTimelock`) holds only parameter and slasher roles on the marketplace, staking and bond contracts, never issuance or escrow. See [Contracts overview](/docs/contracts/overview).
 
 ## Data flow
 

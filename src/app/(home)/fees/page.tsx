@@ -57,7 +57,7 @@ const rules = [
   },
   {
     title: 'CARB staking tiers',
-    body: `When CARB is live, staking lowers the seller fee by a share of the fee (never more than ${percent(MAX_DISCOUNT_BPS)} of it). CARB is not launched yet, so no discount applies today. Staking pays no rewards.`,
+    body: `When CARB is live, staking lowers the seller fee by a share of the fee (never more than ${percent(MAX_DISCOUNT_BPS)} of it). CARB staking is not live yet, so no discount applies today. Staking pays no rewards.`,
   },
   {
     title: 'Issuer bond',

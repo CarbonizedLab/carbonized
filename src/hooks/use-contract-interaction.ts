@@ -16,6 +16,7 @@ import {
 } from '@/config/contracts';
 import { creditFromTuple } from '@/lib/credit-decode';
 import { getLogsChunked, getLogsClient } from '@/lib/logs-client';
+import { resolveFromBlock } from '@/lib/onchain-events';
 import {
   isRegistryConfigured,
   type OnchainCompany,
@@ -504,7 +505,7 @@ export const useContractInteraction = () => {
         CONTRACTS.carbonMarketplace
       );
       const latestBlock = await publicClient.getBlockNumber();
-      const fromBlock = latestBlock > 20000n ? latestBlock - 20000n : 0n;
+      const fromBlock = resolveFromBlock(latestBlock);
 
       const logs = await getLogsChunked<{ args: { orderId?: bigint } }>(
         getLogsClient(publicClient),
@@ -523,16 +524,12 @@ export const useContractInteraction = () => {
       );
 
       const paymentDecimals = await getPaymentDecimals();
-      const orders: Order[] = [];
-      for (const id of orderIds) {
-        const order = await getOrderById(BigInt(id));
-        if (!order) {
-          continue;
-        }
-        orders.push(toOrder(order as OrderTuple, paymentDecimals));
-      }
-
-      return orders;
+      const fetched = await Promise.all(
+        orderIds.map((id) => getOrderById(BigInt(id)))
+      );
+      return fetched.flatMap((order) =>
+        order ? [toOrder(order as OrderTuple, paymentDecimals)] : []
+      );
     } catch (error) {
       console.error('Error fetching orders:', error);
       return [];
@@ -550,7 +547,7 @@ export const useContractInteraction = () => {
         CONTRACTS.carbonMarketplace
       );
       const latestBlock = await publicClient.getBlockNumber();
-      const fromBlock = latestBlock > 20000n ? latestBlock - 20000n : 0n;
+      const fromBlock = resolveFromBlock(latestBlock);
 
       const logs = await getLogsChunked<{ args: { auctionId?: bigint } }>(
         getLogsClient(publicClient),
