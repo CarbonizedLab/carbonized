@@ -1,0 +1,5 @@
+# Contracts and release tooling need a maintainer review.
+/contracts/            @CarbonizedLab
+/.github/              @CarbonizedLab
+/SECURITY.md           @CarbonizedLab
+/scripts/security-gate.py @CarbonizedLab

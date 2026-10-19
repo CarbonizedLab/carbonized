@@ -1,7 +1,7 @@
 {
   "name": "carbonized-contracts",
   "version": "1.0.0",
-  "description": "Industrial-grade blockchain carbon credit marketplace on Chainlink",
+  "description": "Solidity contracts for the Carbonized carbon credit marketplace",
   "main": "index.js",
   "scripts": {
     "compile": "hardhat compile",
@@ -70,12 +70,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/karbonized/carbonized"
+    "url": "https://github.com/CarbonizedLab/carbonized"
   },
   "bugs": {
-    "url": "https://github.com/karbonized/carbonized/issues"
+    "url": "https://github.com/CarbonizedLab/carbonized/issues"
   },
-  "homepage": "https://carb.example",
+  "homepage": "https://carbonized.app",
   "engines": {
     "node": ">=18.0.0",
     "npm": ">=9.0.0"

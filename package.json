@@ -130,10 +130,23 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/karbonized/carbonized.git"
+    "url": "git+https://github.com/CarbonizedLab/carbonized.git"
   },
   "bugs": {
-    "url": "https://github.com/karbonized/carbonized/issues"
+    "url": "https://github.com/CarbonizedLab/carbonized/issues"
   },
-  "author": "Carbonized"
+  "author": "Carbonized",
+  "description": "Open-source onchain marketplace for carbon credits: issuance, pooling, trading and retirement.",
+  "homepage": "https://carbonized.app",
+  "keywords": [
+    "carbon-credits",
+    "climate",
+    "marketplace",
+    "solidity",
+    "nextjs",
+    "robinhood-chain"
+  ],
+  "engines": {
+    "node": ">=22"
+  }
 }
