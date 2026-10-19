@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./public/banner.png" alt="Carbonized: carbon credits, issued and retired onchain" width="100%">
+  <img src="https://raw.githubusercontent.com/CarbonizedLab/carbonized/main/public/banner.png" alt="Carbonized: carbon credits, issued and retired onchain" width="100%">
 </p>
 
 <p align="center">
@@ -27,7 +27,7 @@ An open-source **onchain marketplace for carbon credits**. A credit is issued by
 ## How a credit moves
 
 <p align="center">
-  <img src="./public/how-a-credit-moves.png" alt="How a credit moves: issue, pool, trade and retire, with the onchain record created at each step" width="100%">
+  <img src="https://raw.githubusercontent.com/CarbonizedLab/carbonized/main/public/how-a-credit-moves.png" alt="How a credit moves: issue, pool, trade and retire, with the onchain record created at each step" width="100%">
 </p>
 
 | Step | What happens | Contract |
